@@ -1,0 +1,144 @@
+/**
+ * BM25 Retrieval Engine — zero-dependency, runs entirely in-browser.
+ *
+ * Implements the Okapi BM25 ranking algorithm for scoring document relevance
+ * against a query. This is the same algorithm used by Elasticsearch and Lucene.
+ */
+
+import { Chunk } from '../types';
+
+// BM25 tuning parameters
+const K1 = 1.5;  // Term frequency saturation
+const B = 0.75;  // Length normalization
+
+// Simple stop words to filter out
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
+  'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as',
+  'into', 'through', 'during', 'before', 'after', 'above', 'below',
+  'between', 'out', 'off', 'over', 'under', 'again', 'further', 'then',
+  'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'each',
+  'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
+  'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+  'and', 'but', 'or', 'if', 'while', 'because', 'until', 'although',
+  'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we', 'our', 'you',
+  'your', 'he', 'him', 'his', 'she', 'her', 'it', 'its', 'they', 'them',
+  'their', 'what', 'which', 'who', 'whom',
+]);
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1 && !STOP_WORDS.has(t));
+}
+
+interface DocEntry {
+  chunk: Chunk;
+  tokens: string[];
+  termFreqs: Map<string, number>;
+}
+
+export interface BM25Index {
+  docs: DocEntry[];
+  avgDocLength: number;
+  docCount: number;
+  /** Maps term -> set of doc indices that contain it */
+  invertedIndex: Map<string, Set<number>>;
+}
+
+/**
+ * Build a BM25 index from an array of chunks.
+ */
+export function buildIndex(chunks: Chunk[]): BM25Index {
+  const docs: DocEntry[] = [];
+  const invertedIndex = new Map<string, Set<number>>();
+  let totalTokens = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const tokens = tokenize(chunks[i].text);
+    totalTokens += tokens.length;
+
+    const termFreqs = new Map<string, number>();
+    for (const token of tokens) {
+      termFreqs.set(token, (termFreqs.get(token) || 0) + 1);
+    }
+
+    docs.push({ chunk: chunks[i], tokens, termFreqs });
+
+    // Update inverted index
+    for (const term of termFreqs.keys()) {
+      if (!invertedIndex.has(term)) {
+        invertedIndex.set(term, new Set());
+      }
+      invertedIndex.get(term)!.add(i);
+    }
+  }
+
+  return {
+    docs,
+    avgDocLength: chunks.length > 0 ? totalTokens / chunks.length : 0,
+    docCount: chunks.length,
+    invertedIndex,
+  };
+}
+
+/**
+ * Search the BM25 index for the most relevant chunks given a query.
+ * Returns up to `topK` results sorted by relevance score (descending).
+ */
+export function search(index: BM25Index, query: string, topK: number = 5): { chunk: Chunk; score: number }[] {
+  if (index.docCount === 0) return [];
+
+  const queryTokens = tokenize(query);
+  if (queryTokens.length === 0) return [];
+
+  const scores = new Float64Array(index.docCount);
+
+  for (const qTerm of queryTokens) {
+    const postings = index.invertedIndex.get(qTerm);
+    if (!postings) continue;
+
+    // IDF: log((N - n + 0.5) / (n + 0.5) + 1)
+    const n = postings.size;
+    const idf = Math.log((index.docCount - n + 0.5) / (n + 0.5) + 1);
+
+    for (const docIdx of postings) {
+      const doc = index.docs[docIdx];
+      const tf = doc.termFreqs.get(qTerm) || 0;
+      const docLen = doc.tokens.length;
+
+      // BM25 term score
+      const tfNorm = (tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (docLen / index.avgDocLength)));
+      scores[docIdx] += idf * tfNorm;
+    }
+  }
+
+  // Get top K results
+  const results: { chunk: Chunk; score: number }[] = [];
+  for (let i = 0; i < scores.length; i++) {
+    if (scores[i] > 0) {
+      results.push({ chunk: index.docs[i].chunk, score: scores[i] });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, topK);
+}
+
+/**
+ * Format retrieved chunks into a context block for the system prompt.
+ */
+export function formatRagContext(results: { chunk: Chunk; score: number }[]): string {
+  if (results.length === 0) return '';
+
+  let block = '## REFERENCE MATERIAL\nThe following excerpts are from the user\'s uploaded datasets. Use them as additional context when relevant to the conversation:\n\n';
+  for (let i = 0; i < results.length; i++) {
+    block += `--- Excerpt ${i + 1} (relevance: ${results[i].score.toFixed(2)}) ---\n`;
+    block += results[i].chunk.text + '\n\n';
+  }
+  return block;
+}
