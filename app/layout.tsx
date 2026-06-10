@@ -24,11 +24,11 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "D-PE.ai — AI Prompt Engineering",
-  description: "Engineer precise, production-ready AI prompts through an intelligent interview process. Built on the 9-pillar framework.",
+  title: "D-PE.ai | God-Tier Prompt Engineering",
+  description: "Engineer precise, production-ready AI prompts through an intelligent, socratic interview process.",
   openGraph: {
-    title: "D-PE.ai — AI Prompt Engineering",
-    description: "Engineer precise, production-ready AI prompts through an intelligent interview process.",
+    title: "D-PE.ai",
+    description: "Engineer precise, production-ready AI prompts.",
     type: "website",
   }
 };
