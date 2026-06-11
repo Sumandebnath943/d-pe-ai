@@ -58,15 +58,15 @@ Do the following:
 1. Classify the task this prompt targets as "basic", "standard", or "complex".
 2. Score the prompt 0-100 on how well it clears the quality bar (specificity, completeness for its tier, freedom from vague words, edge-case coverage, immediate usability, no bloat).
 3. List concrete issues (each with an "area", a "severity" of "minor" or "major", and a short "note"). If the prompt is excellent, return an empty list.
-4. If you can meaningfully strengthen the prompt, return "improvedPrompt": the FULL rewritten prompt, preserving the "## SECTION" heading format and the appropriate sections for its tier. If it is already excellent (no issues, score >= 90), return "improvedPrompt": null.
+4. Whenever the score is below 90 OR there is at least one issue, you MUST return a non-null "improvedPrompt": the FULL rewritten prompt that fixes every issue you listed, preserving the "## SECTION" heading format and the sections appropriate to its tier. Only return null when the prompt is already excellent (no issues AND score >= 90).
 
-Return ONLY valid JSON of exactly this shape:
+Return ONLY valid JSON of exactly this shape. Write "improvedPrompt" FIRST so it is never truncated:
 {
+  "improvedPrompt": <string or null>,
   "level": "basic|standard|complex",
   "score": <integer 0-100>,
   "summary": "<one or two sentences on the prompt's quality>",
-  "issues": [ { "area": "<short>", "severity": "minor|major", "note": "<short>" } ],
-  "improvedPrompt": <string or null>
+  "issues": [ { "area": "<short>", "severity": "minor|major", "note": "<short>" } ]
 }`;
 
     const user = `SYSTEM PROMPT TO REVIEW:\n"""\n${prompt}\n"""\n\nReview it against the quality bar and return the JSON.`;
