@@ -10,9 +10,21 @@ import { loadSessions, saveSessions } from "../lib/sessions";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { getMemories, formatMemoriesForPrompt } from "../lib/memory";
 import { getAllChunks } from "../lib/rag/store";
-import { buildIndex, search, formatRagContext, BM25Index } from "../lib/rag/retriever";
-import LabWorkspace from "./LabWorkspace";
+import { buildHybridIndex, searchHybrid, formatRagContext, HybridIndex } from "../lib/rag/retriever";
+import { embedQuery } from "../lib/rag/embeddings";
+import { runTournament } from "../lib/advanced";
+import { runResponsibleReview } from "../lib/responsible";
+import { Tournament, ResponsibilityReport } from "../lib/types";
 import { motion } from "framer-motion";
+
+const FRESH_TOURNAMENT: Tournament = {
+  status: "running",
+  stage: "Starting tournament…",
+  testcases: [],
+  candidates: [],
+  runs: [],
+  scores: [],
+};
 
 const generateUUID = () => {
   if (typeof window !== "undefined" && window.crypto && window.crypto.randomUUID) {
@@ -27,8 +39,9 @@ export default function PromptForgeApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   
-  // Workspace Mode (Phase 2)
-  const [workspaceMode, setWorkspaceMode] = useState<'forge' | 'lab'>('forge');
+  // Generation mode — Normal (single-shot) or Advanced (best-of-N tournament).
+  // Drives generation behavior in Phase 2; for now it only toggles state.
+  const [mode, setMode] = useState<'normal' | 'advanced'>('normal');
 
   // Resize and Collapse States
   const [leftWidth, setLeftWidth] = useState(260);
@@ -36,8 +49,8 @@ export default function PromptForgeApp() {
   const [rightWidth, setRightWidth] = useState(400);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
 
-  // RAG Index State
-  const ragIndexRef = useRef<BM25Index | null>(null);
+  // RAG Index State (hybrid: BM25 + vector)
+  const ragIndexRef = useRef<HybridIndex | null>(null);
 
   const isLoadedRef = useRef(false);
 
@@ -115,8 +128,9 @@ export default function PromptForgeApp() {
     try {
       const allChunks = await getAllChunks();
       if (allChunks.length > 0) {
-        ragIndexRef.current = buildIndex(allChunks);
-        console.log(`[RAG] Index built: ${allChunks.length} chunks`);
+        ragIndexRef.current = buildHybridIndex(allChunks);
+        const embedded = ragIndexRef.current.vectors.length;
+        console.log(`[RAG] Hybrid index built: ${allChunks.length} chunks (${embedded} embedded)`);
       } else {
         ragIndexRef.current = null;
       }
@@ -240,6 +254,130 @@ export default function PromptForgeApp() {
     }
   };
 
+  // Advanced mode: run the best-of-N tournament, narrating progress into the
+  // session, then promote the winning candidate to the generated prompt.
+  const runAdvanced = async (
+    sessionId: string,
+    conversation: Message[],
+    seedPrompt: string
+  ) => {
+    setIsGeneratingPrompt(true);
+    // Reset any prior tournament state for this session.
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, tournament: { ...FRESH_TOURNAMENT } } : s))
+    );
+
+    try {
+      const finalTournament = await runTournament(conversation, seedPrompt, (patch) => {
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sessionId
+              ? { ...s, tournament: { ...(s.tournament ?? FRESH_TOURNAMENT), ...patch } }
+              : s
+          )
+        );
+      });
+
+      const winner =
+        finalTournament.candidates.find((c) => c.id === finalTournament.winnerId) ??
+        finalTournament.candidates[0];
+
+      const winningPrompt = winner?.prompt ?? seedPrompt;
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                tournament: finalTournament,
+                generatedPrompt: {
+                  content: winningPrompt,
+                  createdAt: new Date(),
+                  sessionId,
+                },
+              }
+            : s
+        )
+      );
+      // Responsible-AI review on the tournament winner.
+      await runResponsible(sessionId, winningPrompt);
+    } catch (err) {
+      console.error("[Advanced] Tournament failed:", err);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                tournament: {
+                  ...(s.tournament ?? FRESH_TOURNAMENT),
+                  status: "error",
+                  stage: "Tournament failed",
+                  error: err instanceof Error ? err.message : "Tournament failed.",
+                },
+              }
+            : s
+        )
+      );
+    } finally {
+      setIsGeneratingPrompt(false);
+    }
+  };
+
+  // Responsible-AI pass: critique the final prompt against the constitution and,
+  // if it breaches anything, promote the auto-revised safe version. Runs in both
+  // Normal and Advanced modes once a final prompt exists.
+  const runResponsible = async (sessionId: string, finalPrompt: string) => {
+    const reviewing: ResponsibilityReport = {
+      status: "reviewing",
+      verdict: "safe",
+      score: 0,
+      summary: "",
+      findings: [],
+      revised: false,
+    };
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, responsibility: reviewing } : s))
+    );
+
+    try {
+      const report = await runResponsibleReview(finalPrompt);
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const next = { ...s, responsibility: report };
+          // A breach was found and rewritten — show the safe version.
+          if (report.verdict === "revised" && report.revisedPrompt) {
+            next.generatedPrompt = {
+              content: report.revisedPrompt,
+              createdAt: new Date(),
+              sessionId,
+            };
+          }
+          return next;
+        })
+      );
+    } catch (err) {
+      console.error("[Responsible] Review failed:", err);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                responsibility: {
+                  status: "error",
+                  verdict: "safe",
+                  score: 0,
+                  summary: "",
+                  findings: [],
+                  revised: false,
+                  error: err instanceof Error ? err.message : "Safety review failed.",
+                },
+              }
+            : s
+        )
+      );
+    }
+  };
+
   // Main chat sending execution with real streaming tokens
   const handleSend = async (text: string, isReverseEngineer: boolean = false) => {
     if (!activeSessionId) return;
@@ -312,8 +450,19 @@ export default function PromptForgeApp() {
     }
 
     try {
-      if (ragIndexRef.current && ragIndexRef.current.docCount > 0) {
-        const results = search(ragIndexRef.current, text, 5);
+      const index = ragIndexRef.current;
+      if (index && index.bm25.docCount > 0) {
+        // Embed the query only when there are vectors to match against —
+        // this reuses the already-downloaded model, so it stays fast.
+        let queryVec: number[] | undefined;
+        if (index.vectors.length > 0) {
+          try {
+            queryVec = await embedQuery(text);
+          } catch (embErr) {
+            console.error('[RAG] Query embedding failed, using keyword-only:', embErr);
+          }
+        }
+        const results = searchHybrid(index, text, queryVec, 5);
         if (results.length > 0) {
           ragContextText = formatRagContext(results);
         }
@@ -381,8 +530,19 @@ export default function PromptForgeApp() {
                   return s;
                 })
               );
+
+              // Normal mode: the seed prompt is the final answer.
+              // Advanced mode: run the tournament and promote the winner.
+              if (mode === "advanced") {
+                runAdvanced(activeSessionId, updatedMessages, promptText);
+              } else {
+                setIsGeneratingPrompt(false);
+                // Responsible-AI review on the final prompt.
+                runResponsible(activeSessionId, promptText);
+              }
+            } else {
+              setIsGeneratingPrompt(false);
             }
-            setIsGeneratingPrompt(false);
           }
         },
         memoriesText || undefined,
@@ -460,8 +620,8 @@ export default function PromptForgeApp() {
             onNewSession={handleNewSession}
             onDeleteSession={handleDeleteSession}
             onDatasetsChange={rebuildRagIndex}
-            workspaceMode={workspaceMode}
-            setWorkspaceMode={setWorkspaceMode}
+            mode={mode}
+            setMode={setMode}
           />
         </div>
       </div>
@@ -500,8 +660,7 @@ export default function PromptForgeApp() {
       )}
 
       {/* MAIN CENTER WRAPPER */}
-      {workspaceMode === 'forge' ? (
-        <>
+      <>
           <div className="flex flex-1 flex-col h-full overflow-hidden relative">
             {/* Toggle Buttons Floating Layer */}
             <div style={{
@@ -617,13 +776,12 @@ export default function PromptForgeApp() {
             version={promptVersion}
             onRefine={handleRefine}
             isLoadingChat={isLoading}
+            tournament={activeSession?.tournament}
+            responsibility={activeSession?.responsibility}
           />
             </div>
           </div>
         </>
-      ) : (
-        <LabWorkspace />
-      )}
     </motion.div>
   );
 }

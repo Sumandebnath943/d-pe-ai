@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // @ts-ignore
+      // @ts-expect-error pdf-parse ships no bundled types
       const pdfParse = (await import("pdf-parse")).default || (await import("pdf-parse"));
       const buffer = Buffer.from(await file.arrayBuffer());
       const pdfData = await pdfParse(buffer);
@@ -52,11 +52,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ text });
-  } catch (error: any) {
+  } catch (error) {
     console.error("File parse error:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to parse file." },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Failed to parse file.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, Manrope, DM_Mono } from "next/font/google";
+import { Instrument_Serif, Manrope, DM_Mono, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const instrumentSerif = Instrument_Serif({
@@ -23,6 +23,13 @@ const dmMono = DM_Mono({
   display: "swap",
 });
 
+// Variable font — no explicit weight needed. Used by the terminal landing console.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "D-PE.ai | God-Tier Prompt Engineering",
   description: "Engineer precise, production-ready AI prompts through an intelligent, socratic interview process.",
@@ -41,7 +48,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${instrumentSerif.variable} ${manrope.variable} ${dmMono.variable} h-full antialiased`}
+      className={`${instrumentSerif.variable} ${manrope.variable} ${dmMono.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body>
         {children}

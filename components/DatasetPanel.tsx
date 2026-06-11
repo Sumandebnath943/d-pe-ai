@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dataset } from '@/lib/types'
 import { parseFile, validateFile } from '@/lib/rag/parser'
 import { chunkText } from '@/lib/rag/chunker'
 import { saveDataset, getDatasets, deleteDataset } from '@/lib/rag/store'
+import { embedTexts, onModelProgress } from '@/lib/rag/embeddings'
 
 interface Props {
   onDatasetsChange: () => void
@@ -18,18 +19,18 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    loadDatasets()
-  }, [])
-
-  const loadDatasets = async () => {
+  const loadDatasets = useCallback(async () => {
     try {
       const ds = await getDatasets()
       setDatasets(ds.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()))
     } catch (err) {
       console.error('Failed to load datasets:', err)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadDatasets()
+  }, [loadDatasets])
 
   const processFile = async (file: File) => {
     setError(null)
@@ -64,6 +65,23 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
         throw new Error('No meaningful chunks could be created from this file.')
       }
 
+      // Build the semantic half of the hybrid index: embed every chunk locally.
+      // First upload pays a one-time model download; we surface it as progress.
+      let embeddedChunks = chunks
+      try {
+        onModelProgress((pct) => setUploadProgress(`Loading embedding model… ${pct}%`))
+        const vectors = await embedTexts(
+          chunks.map((c) => c.text),
+          (done, total) => setUploadProgress(`Embedding ${done}/${total} chunks…`)
+        )
+        embeddedChunks = chunks.map((c, i) => ({ ...c, embedding: vectors[i] }))
+      } catch (embErr) {
+        // Semantic indexing is best-effort — fall back to keyword-only (BM25).
+        console.error('[RAG] Embedding failed, falling back to keyword-only:', embErr)
+      } finally {
+        onModelProgress(null)
+      }
+
       setUploadProgress(`Indexing ${chunks.length} chunks...`)
 
       // Create dataset metadata
@@ -78,15 +96,15 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
       }
 
       // Save to IndexedDB
-      await saveDataset(dataset, chunks)
+      await saveDataset(dataset, embeddedChunks)
 
       setUploadProgress('Complete')
       await loadDatasets()
       onDatasetsChange()
 
       setTimeout(() => setUploadProgress(''), 2000)
-    } catch (err: any) {
-      setError(err.message || 'Failed to process file.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process file.')
     } finally {
       setIsUploading(false)
     }

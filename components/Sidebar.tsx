@@ -11,13 +11,13 @@ interface Props {
   onNewSession: () => void
   onDeleteSession: (id: string) => void
   onDatasetsChange: () => void
-  workspaceMode: 'forge' | 'lab'
-  setWorkspaceMode: (mode: 'forge' | 'lab') => void
+  mode: 'normal' | 'advanced'
+  setMode: (mode: 'normal' | 'advanced') => void
 }
 
 type SidebarTab = 'sessions' | 'data'
 
-export default function Sidebar({ sessions, activeSessionId, onSelectSession, onNewSession, onDeleteSession, onDatasetsChange, workspaceMode, setWorkspaceMode }: Props) {
+export default function Sidebar({ sessions, activeSessionId, onSelectSession, onNewSession, onDeleteSession, onDatasetsChange, mode, setMode }: Props) {
   const [isDark, setIsDark] = useState(false)
   const [isMemoryOpen, setIsMemoryOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions')
@@ -97,7 +97,7 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             </button>
           </div>
 
-          {/* Workspace Toggle */}
+          {/* Generation Mode Toggle */}
           <div style={{
             display: 'flex',
             background: 'var(--surface-2)',
@@ -105,42 +105,31 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             borderRadius: '8px',
             border: '1px solid var(--border)'
           }}>
-            <button
-              onClick={() => setWorkspaceMode('forge')}
-              style={{
-                flex: 1,
-                padding: '6px 0',
-                background: workspaceMode === 'forge' ? 'var(--bg)' : 'transparent',
-                color: workspaceMode === 'forge' ? 'var(--text-1)' : 'var(--text-3)',
-                border: `1px solid ${workspaceMode === 'forge' ? 'var(--border)' : 'transparent'}`,
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: workspaceMode === 'forge' ? 600 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: workspaceMode === 'forge' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'
-              }}
-            >
-              Forge
-            </button>
-            <button
-              onClick={() => setWorkspaceMode('lab')}
-              style={{
-                flex: 1,
-                padding: '6px 0',
-                background: workspaceMode === 'lab' ? 'var(--bg)' : 'transparent',
-                color: workspaceMode === 'lab' ? 'var(--text-1)' : 'var(--text-3)',
-                border: `1px solid ${workspaceMode === 'lab' ? 'var(--border)' : 'transparent'}`,
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: workspaceMode === 'lab' ? 600 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                boxShadow: workspaceMode === 'lab' ? '0 1px 3px rgba(0,0,0,0.05)' : 'none'
-              }}
-            >
-              Lab
-            </button>
+            {(['normal', 'advanced'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                title={m === 'normal'
+                  ? 'Normal — single-shot prompt generation'
+                  : 'Advanced — generates several candidate prompts and picks the best'}
+                style={{
+                  flex: 1,
+                  padding: '6px 0',
+                  background: mode === m ? 'var(--bg)' : 'transparent',
+                  color: mode === m ? 'var(--text-1)' : 'var(--text-3)',
+                  border: `1px solid ${mode === m ? 'var(--border)' : 'transparent'}`,
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: mode === m ? 600 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {m}
+              </button>
+            ))}
           </div>
         </div>
 

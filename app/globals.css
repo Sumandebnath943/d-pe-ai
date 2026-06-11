@@ -18,6 +18,7 @@
   --font-serif: var(--font-instrument-serif);
   --font-sans: var(--font-manrope);
   --font-mono: var(--font-dm-mono);
+  --font-terminal: var(--font-jetbrains-mono);
 }
 
 .dark-theme {
@@ -68,5 +69,36 @@ body {
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* --- Living Console (terminal landing) --- */
+/* Block cursor that blinks like a real shell caret. */
+@keyframes cursorBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.dpe-cursor { animation: cursorBlink 1.05s step-end infinite; }
+
+/* Commit-graph nodes "breathe" with a soft glow so the log feels alive. */
+@keyframes nodePulse {
+  0%, 100% { text-shadow: 0 0 4px rgba(63, 185, 80, 0.35); opacity: 0.85; }
+  50%      { text-shadow: 0 0 11px rgba(63, 185, 80, 0.95); opacity: 1; }
+}
+.dpe-node { animation: nodePulse 2.6s ease-in-out infinite; }
+
+/* The "type init d-pe" hint gently breathes to draw the eye without nagging. */
+@keyframes hintBreathe { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.85; } }
+.dpe-hint { animation: hintBreathe 2.4s ease-in-out infinite; }
+
+/* Terminal scrollback scrolls, but the scrollbar is hidden (overlay-style),
+   so it never collides with the window border into a "double bar". */
+.dpe-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.dpe-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Matrix-transition glitch text: a quick RGB-jitter as we "jack in". */
+@keyframes glitchShift {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 1px); }
+  40% { transform: translate(2px, -1px); }
+  60% { transform: translate(-1px, -1px); }
+  80% { transform: translate(1px, 1px); }
+}
+.dpe-glitch { animation: glitchShift 0.16s steps(2) infinite; }
 
 button { font-family: inherit; }

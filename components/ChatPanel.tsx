@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, Loader } from 'lucide-react'
 import MessageBubble from './MessageBubble'
-import TypingIndicator from './TypingIndicator'
 import EmptyState from './EmptyState'
 import { Message } from '@/lib/types'
 

@@ -209,9 +209,9 @@ export async function POST(req: NextRequest) {
     // System message is prepended to the array.
     const groqMessages = [
       { role: "system" as const, content: systemPrompt },
-      ...messages.map((m: any) => ({
+      ...messages.map((m: { role?: string; content?: string }) => ({
         role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-        content: m.content,
+        content: m.content ?? "",
       })),
     ];
 
@@ -251,11 +251,9 @@ export async function POST(req: NextRequest) {
         Connection: "keep-alive",
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error in PromptForge Groq Chat Route:", error);
-    return NextResponse.json(
-      { error: error.message || "An unexpected error occurred." },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -129,6 +129,86 @@ export function search(index: BM25Index, query: string, topK: number = 5): { chu
   return results.slice(0, topK);
 }
 
+// ---------------------------------------------------------------------------
+// Hybrid retrieval — fuses lexical (BM25) and semantic (vector) rankings.
+// ---------------------------------------------------------------------------
+
+/** Dot product. Vectors are L2-normalized at embed time, so this equals cosine similarity. */
+function dot(a: number[], b: number[]): number {
+  let sum = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) sum += a[i] * b[i];
+  return sum;
+}
+
+export interface HybridIndex {
+  bm25: BM25Index;
+  /** Only chunks that actually carry an embedding participate in vector search. */
+  vectors: { chunk: Chunk; vec: number[] }[];
+}
+
+/** Build a combined index: BM25 over all chunks + a vector list over embedded chunks. */
+export function buildHybridIndex(chunks: Chunk[]): HybridIndex {
+  return {
+    bm25: buildIndex(chunks),
+    vectors: chunks
+      .filter((c) => c.embedding && c.embedding.length > 0)
+      .map((c) => ({ chunk: c, vec: c.embedding as number[] })),
+  };
+}
+
+/**
+ * Hybrid search via Reciprocal Rank Fusion (RRF).
+ *
+ * Each retriever produces a ranked candidate pool; an item's fused score is the
+ * sum of 1/(K + rank) across the rankers it appears in. RRF needs no score
+ * normalization and gracefully degrades to BM25-only when no query vector is
+ * available (e.g. the embedding model hasn't loaded, or no chunks are embedded).
+ */
+export function searchHybrid(
+  index: HybridIndex,
+  query: string,
+  queryVec: number[] | undefined,
+  topK: number = 5
+): { chunk: Chunk; score: number }[] {
+  const K = 60; // standard RRF damping constant
+  const POOL = Math.max(topK * 4, 20);
+  const chunkById = new Map<string, Chunk>();
+
+  // Lexical ranking (already sorted best-first).
+  const bmRank = new Map<string, number>();
+  const bm = search(index.bm25, query, POOL);
+  bm.forEach((r, i) => {
+    bmRank.set(r.chunk.id, i);
+    chunkById.set(r.chunk.id, r.chunk);
+  });
+
+  // Semantic ranking (cosine similarity).
+  const vecRank = new Map<string, number>();
+  if (queryVec && queryVec.length > 0 && index.vectors.length > 0) {
+    const scored = index.vectors
+      .map((v) => ({ chunk: v.chunk, score: dot(queryVec, v.vec) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, POOL);
+    scored.forEach((r, i) => {
+      vecRank.set(r.chunk.id, i);
+      chunkById.set(r.chunk.id, r.chunk);
+    });
+  }
+
+  if (chunkById.size === 0) return [];
+
+  const fused: { chunk: Chunk; score: number }[] = [];
+  for (const [id, chunk] of chunkById) {
+    let score = 0;
+    if (bmRank.has(id)) score += 1 / (K + bmRank.get(id)!);
+    if (vecRank.has(id)) score += 1 / (K + vecRank.get(id)!);
+    fused.push({ chunk, score });
+  }
+  fused.sort((a, b) => b.score - a.score);
+  return fused.slice(0, topK);
+}
+
 /**
  * Format retrieved chunks into a context block for the system prompt.
  */
