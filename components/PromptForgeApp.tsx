@@ -10,7 +10,8 @@ import { loadSessions, saveSessions } from "../lib/sessions";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { getMemories, formatMemoriesForPrompt } from "../lib/memory";
 import { getAllChunks } from "../lib/rag/store";
-import { buildHybridIndex, searchHybrid, formatRagContext, HybridIndex } from "../lib/rag/retriever";
+import { buildHybridIndex, searchHybrid, formatRagContext, HybridIndex, ChunkFilter } from "../lib/rag/retriever";
+import { retrieveAdvanced } from "../lib/rag/advancedRetrieval";
 import { embedQuery } from "../lib/rag/embeddings";
 import { runTournament } from "../lib/advanced";
 import { runResponsibleReview } from "../lib/responsible";
@@ -42,6 +43,10 @@ export default function PromptForgeApp() {
   // Generation mode — Normal (single-shot) or Advanced (best-of-N tournament).
   // Drives generation behavior in Phase 2; for now it only toggles state.
   const [mode, setMode] = useState<'normal' | 'advanced'>('normal');
+
+  // Metadata filtering: dataset ids the user has toggled OFF (excluded from
+  // retrieval). Empty = all datasets active. Persisted across sessions.
+  const [disabledDatasetIds, setDisabledDatasetIds] = useState<string[]>([]);
 
   // Resize and Collapse States
   const [leftWidth, setLeftWidth] = useState(260);
@@ -143,6 +148,29 @@ export default function PromptForgeApp() {
   useEffect(() => {
     rebuildRagIndex();
   }, [rebuildRagIndex]);
+
+  // Load persisted dataset-filter selection once on mount.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('dpe_disabled_datasets');
+      if (stored) setDisabledDatasetIds(JSON.parse(stored));
+    } catch (err) {
+      console.error('[RAG] Failed to load dataset filter:', err);
+    }
+  }, []);
+
+  // Toggle a dataset in/out of retrieval and persist the choice.
+  const handleToggleDataset = useCallback((id: string) => {
+    setDisabledDatasetIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      try {
+        localStorage.setItem('dpe_disabled_datasets', JSON.stringify(next));
+      } catch (err) {
+        console.error('[RAG] Failed to persist dataset filter:', err);
+      }
+      return next;
+    });
+  }, []);
 
   // Save sessions list state changes back to localStorage
   useEffect(() => {
@@ -452,17 +480,29 @@ export default function PromptForgeApp() {
     try {
       const index = ragIndexRef.current;
       if (index && index.bm25.docCount > 0) {
-        // Embed the query only when there are vectors to match against —
-        // this reuses the already-downloaded model, so it stays fast.
-        let queryVec: number[] | undefined;
-        if (index.vectors.length > 0) {
-          try {
-            queryVec = await embedQuery(text);
-          } catch (embErr) {
-            console.error('[RAG] Query embedding failed, using keyword-only:', embErr);
+        // Metadata filtering: drop chunks from datasets the user toggled off.
+        const disabledSet = new Set(disabledDatasetIds);
+        const datasetFilter: ChunkFilter | undefined =
+          disabledSet.size > 0 ? (c) => !disabledSet.has(c.datasetId) : undefined;
+
+        let results;
+        if (mode === 'advanced') {
+          // Advanced retrieval: multi-query + HyDE expansion, RRF fusion, LLM re-rank.
+          results = await retrieveAdvanced(index, text, 5, datasetFilter);
+        } else {
+          // Normal retrieval: single-query hybrid search (fast, no extra LLM calls).
+          // Embed the query only when there are vectors to match against —
+          // this reuses the already-downloaded model, so it stays fast.
+          let queryVec: number[] | undefined;
+          if (index.vectors.length > 0) {
+            try {
+              queryVec = await embedQuery(text);
+            } catch (embErr) {
+              console.error('[RAG] Query embedding failed, using keyword-only:', embErr);
+            }
           }
+          results = searchHybrid(index, text, queryVec, 5, datasetFilter);
         }
-        const results = searchHybrid(index, text, queryVec, 5);
         if (results.length > 0) {
           ragContextText = formatRagContext(results);
         }
@@ -622,6 +662,8 @@ export default function PromptForgeApp() {
             onDatasetsChange={rebuildRagIndex}
             mode={mode}
             setMode={setMode}
+            disabledDatasetIds={disabledDatasetIds}
+            onToggleDataset={handleToggleDataset}
           />
         </div>
       </div>
