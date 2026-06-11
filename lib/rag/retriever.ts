@@ -86,11 +86,20 @@ export function buildIndex(chunks: Chunk[]): BM25Index {
   };
 }
 
+/** Optional predicate to restrict retrieval to a subset of chunks (e.g. selected datasets). */
+export type ChunkFilter = (chunk: Chunk) => boolean;
+
 /**
  * Search the BM25 index for the most relevant chunks given a query.
  * Returns up to `topK` results sorted by relevance score (descending).
+ * An optional `filter` restricts results to matching chunks (metadata filtering).
  */
-export function search(index: BM25Index, query: string, topK: number = 5): { chunk: Chunk; score: number }[] {
+export function search(
+  index: BM25Index,
+  query: string,
+  topK: number = 5,
+  filter?: ChunkFilter
+): { chunk: Chunk; score: number }[] {
   if (index.docCount === 0) return [];
 
   const queryTokens = tokenize(query);
@@ -120,7 +129,7 @@ export function search(index: BM25Index, query: string, topK: number = 5): { chu
   // Get top K results
   const results: { chunk: Chunk; score: number }[] = [];
   for (let i = 0; i < scores.length; i++) {
-    if (scores[i] > 0) {
+    if (scores[i] > 0 && (!filter || filter(index.docs[i].chunk))) {
       results.push({ chunk: index.docs[i].chunk, score: scores[i] });
     }
   }
@@ -169,7 +178,8 @@ export function searchHybrid(
   index: HybridIndex,
   query: string,
   queryVec: number[] | undefined,
-  topK: number = 5
+  topK: number = 5,
+  filter?: ChunkFilter
 ): { chunk: Chunk; score: number }[] {
   const K = 60; // standard RRF damping constant
   const POOL = Math.max(topK * 4, 20);
@@ -177,7 +187,7 @@ export function searchHybrid(
 
   // Lexical ranking (already sorted best-first).
   const bmRank = new Map<string, number>();
-  const bm = search(index.bm25, query, POOL);
+  const bm = search(index.bm25, query, POOL, filter);
   bm.forEach((r, i) => {
     bmRank.set(r.chunk.id, i);
     chunkById.set(r.chunk.id, r.chunk);
@@ -187,6 +197,7 @@ export function searchHybrid(
   const vecRank = new Map<string, number>();
   if (queryVec && queryVec.length > 0 && index.vectors.length > 0) {
     const scored = index.vectors
+      .filter((v) => !filter || filter(v.chunk))
       .map((v) => ({ chunk: v.chunk, score: dot(queryVec, v.vec) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, POOL);
@@ -205,6 +216,36 @@ export function searchHybrid(
     if (vecRank.has(id)) score += 1 / (K + vecRank.get(id)!);
     fused.push({ chunk, score });
   }
+  fused.sort((a, b) => b.score - a.score);
+  return fused.slice(0, topK);
+}
+
+/**
+ * Reciprocal Rank Fusion across several independent ranked lists.
+ *
+ * Used by advanced retrieval to merge the hits from multiple query variants
+ * (multi-query + HyDE): an item's fused score is the sum of 1/(K + rank) over
+ * every list it appears in, so chunks that surface for several reformulations
+ * rise to the top. Deduplicates by chunk id.
+ */
+export function rrfFuse(
+  lists: { chunk: Chunk }[][],
+  topK: number = 10,
+  K: number = 60
+): { chunk: Chunk; score: number }[] {
+  const chunkById = new Map<string, Chunk>();
+  const scoreById = new Map<string, number>();
+  for (const list of lists) {
+    list.forEach((item, rank) => {
+      const id = item.chunk.id;
+      chunkById.set(id, item.chunk);
+      scoreById.set(id, (scoreById.get(id) ?? 0) + 1 / (K + rank));
+    });
+  }
+  const fused = Array.from(chunkById.entries()).map(([id, chunk]) => ({
+    chunk,
+    score: scoreById.get(id) ?? 0,
+  }));
   fused.sort((a, b) => b.score - a.score);
   return fused.slice(0, topK);
 }

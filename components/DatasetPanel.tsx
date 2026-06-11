@@ -9,9 +9,11 @@ import { embedTexts, onModelProgress } from '@/lib/rag/embeddings'
 
 interface Props {
   onDatasetsChange: () => void
+  disabledDatasetIds: string[]
+  onToggleDataset: (id: string) => void
 }
 
-export default function DatasetPanel({ onDatasetsChange }: Props) {
+export default function DatasetPanel({ onDatasetsChange, disabledDatasetIds, onToggleDataset }: Props) {
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState('')
@@ -212,7 +214,9 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
             .dataset-delete { opacity: 0; transition: all 0.2s ease; }
             .dataset-row:hover .dataset-delete { opacity: 1; }
           `}</style>
-          {datasets.map(ds => (
+          {datasets.map(ds => {
+            const isActive = !disabledDatasetIds.includes(ds.id)
+            return (
             <div
               key={ds.id}
               className="dataset-row"
@@ -225,6 +229,29 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
                 transition: 'all 0.2s ease',
               }}
             >
+              {/* Include/exclude toggle: controls whether this dataset is used in retrieval */}
+              <button
+                onClick={() => onToggleDataset(ds.id)}
+                title={isActive ? 'Included in retrieval — click to exclude' : 'Excluded from retrieval — click to include'}
+                style={{
+                  width: '16px',
+                  height: '16px',
+                  flexShrink: 0,
+                  borderRadius: '4px',
+                  border: `1.5px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
+                  background: isActive ? 'var(--accent)' : 'transparent',
+                  color: 'var(--bg)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10px',
+                  lineHeight: 1,
+                  padding: 0,
+                  transition: 'all 0.15s ease',
+                }}
+              >{isActive ? '✓' : ''}</button>
+
               <span style={{
                 fontSize: '10px',
                 fontWeight: 500,
@@ -233,6 +260,7 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
                 borderRadius: '4px',
                 padding: '2px 6px',
                 flexShrink: 0,
+                opacity: isActive ? 1 : 0.4,
               }}>.{ds.fileType}</span>
 
               <span style={{
@@ -243,13 +271,14 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                opacity: isActive ? 1 : 0.4,
               }}>{ds.name}</span>
 
-              <span className="label-sm" style={{ color: 'var(--text-4)', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+              <span className="label-sm" style={{ color: 'var(--text-4)', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', opacity: isActive ? 1 : 0.4 }}>
                 {ds.chunkCount} chunks
               </span>
 
-              <span className="label-sm" style={{ color: 'var(--text-4)', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+              <span className="label-sm" style={{ color: 'var(--text-4)', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: '11px', opacity: isActive ? 1 : 0.4 }}>
                 {formatSize(ds.fileSize)}
               </span>
 
@@ -278,7 +307,8 @@ export default function DatasetPanel({ onDatasetsChange }: Props) {
                 }}
               >✕</button>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

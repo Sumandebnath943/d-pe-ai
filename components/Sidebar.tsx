@@ -13,11 +13,13 @@ interface Props {
   onDatasetsChange: () => void
   mode: 'normal' | 'advanced'
   setMode: (mode: 'normal' | 'advanced') => void
+  disabledDatasetIds: string[]
+  onToggleDataset: (id: string) => void
 }
 
 type SidebarTab = 'sessions' | 'data'
 
-export default function Sidebar({ sessions, activeSessionId, onSelectSession, onNewSession, onDeleteSession, onDatasetsChange, mode, setMode }: Props) {
+export default function Sidebar({ sessions, activeSessionId, onSelectSession, onNewSession, onDeleteSession, onDatasetsChange, mode, setMode, disabledDatasetIds, onToggleDataset }: Props) {
   const [isDark, setIsDark] = useState(false)
   const [isMemoryOpen, setIsMemoryOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<SidebarTab>('sessions')
@@ -204,7 +206,11 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             })
           ) : (
             <div style={{ padding: '4px' }}>
-              <DatasetPanel onDatasetsChange={onDatasetsChange} />
+              <DatasetPanel
+                onDatasetsChange={onDatasetsChange}
+                disabledDatasetIds={disabledDatasetIds}
+                onToggleDataset={onToggleDataset}
+              />
             </div>
           )}
         </div>
