@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { llmComplete, hasLLMProvider } from "@/lib/llm";
 import { QUALITY_STANDARDS } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
-
-const MODEL = "llama-3.3-70b-versatile";
 
 /** Retry on Groq rate limits (429), honoring the "try again in Xs" hint. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
@@ -38,14 +36,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A prompt string is required." }, { status: 400 });
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey || apiKey === "your_groq_api_key_here") {
+    if (!hasLLMProvider()) {
       return NextResponse.json(
-        { error: "Groq API key is not configured. Add GROQ_API_KEY to .env.local." },
+        { error: "No LLM provider configured. Add OPENAI_API_KEY or GROQ_API_KEY to .env.local." },
         { status: 500 }
       );
     }
-    const groq = new Groq({ apiKey });
 
     const system = `You are a senior prompt-engineering reviewer. You audit a generated SYSTEM PROMPT against a strict quality bar, then rewrite it to clear that bar while preserving its intent and structure.
 
@@ -71,22 +67,20 @@ Return ONLY valid JSON of exactly this shape. Write "improvedPrompt" FIRST so it
 
     const user = `SYSTEM PROMPT TO REVIEW:\n"""\n${prompt}\n"""\n\nReview it against the quality bar and return the JSON.`;
 
-    const res = await withRetry(() =>
-      groq.chat.completions.create({
-        model: MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        temperature: 0.3,
-        // 4096 is ample for a full rewritten prompt (~3k words) and stays well
-        // under Groq's per-minute token ceiling, unlike an 8k reservation.
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
-      })
-    );
-
-    const raw = res.choices[0]?.message?.content ?? "{}";
+    const raw =
+      (await withRetry(() =>
+        llmComplete({
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          temperature: 0.3,
+          // 4096 is ample for a full rewritten prompt (~3k words) and stays well
+          // under the per-minute token ceiling, unlike an 8k reservation.
+          maxTokens: 4096,
+          jsonObject: true,
+        })
+      )) || "{}";
     let parsed: {
       level?: string;
       score?: number;

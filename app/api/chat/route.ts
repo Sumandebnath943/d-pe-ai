@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { llmStream, hasLLMProvider } from "@/lib/llm";
 import { GENERATION_SPEC } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
@@ -130,12 +130,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey || apiKey === "your_groq_api_key_here") {
+    if (!hasLLMProvider()) {
       return NextResponse.json(
         {
           error:
-            "Groq API key is not configured. Please add GROQ_API_KEY to your .env.local file.",
+            "No LLM provider is configured. Add OPENAI_API_KEY (primary) or GROQ_API_KEY (fallback) to your .env.local file.",
         },
         { status: 500 }
       );
@@ -156,9 +155,8 @@ export async function POST(req: NextRequest) {
       systemPrompt = ragContext.trim() + "\n\n---\n\n" + systemPrompt;
     }
 
-    // Map frontend Message interface to Groq/OpenAI compatible schema.
-    // System message is prepended to the array.
-    const groqMessages = [
+    // Map to the provider-agnostic message schema.
+    const llmMessages = [
       { role: "system" as const, content: systemPrompt },
       ...messages.map((m: { role?: string; content?: string }) => ({
         role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
@@ -166,32 +164,21 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
-    // Initialize Groq client
-    const groq = new Groq({ apiKey });
-
-    // Call Groq Chat Completions API with streaming.
+    // Stream via the provider abstraction (OpenAI primary, Groq fallback).
     // Temperature is pinned for consistent, reproducible generation — the
     // interview is already tightly scripted by the system prompt, and the
     // generated prompt benefits from low-variance, structured output.
-    const stream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: groqMessages,
-      stream: true,
-      temperature: 0.4,
-      top_p: 0.9,
-      max_tokens: 8192,
-    });
-
-    // Create readable stream for the response
     const encoder = new TextEncoder();
     const responseStream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || "";
-            if (text) {
-              controller.enqueue(encoder.encode(text));
-            }
+          for await (const token of llmStream({
+            messages: llmMessages,
+            temperature: 0.4,
+            topP: 0.9,
+            maxTokens: 8192,
+          })) {
+            controller.enqueue(encoder.encode(token));
           }
           controller.close();
         } catch (err) {

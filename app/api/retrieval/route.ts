@@ -1,17 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { llmComplete, hasLLMProvider } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
-
-const MODEL = "llama-3.3-70b-versatile";
-
-function getGroq(): Groq | { error: string } {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey || apiKey === "your_groq_api_key_here") {
-    return { error: "Groq API key is not configured. Add GROQ_API_KEY to .env.local." };
-  }
-  return new Groq({ apiKey });
-}
 
 /** Retry on Groq rate limits (429), honoring the "try again in Xs" hint when present. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
@@ -33,20 +23,19 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   throw lastErr;
 }
 
-async function jsonCompletion(groq: Groq, system: string, user: string, maxTokens = 1024): Promise<unknown> {
-  const res = await withRetry(() =>
-    groq.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      temperature: 0.4,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    })
-  );
-  const text = res.choices[0]?.message?.content ?? "{}";
+async function jsonCompletion(system: string, user: string, maxTokens = 1024): Promise<unknown> {
+  const text =
+    (await withRetry(() =>
+      llmComplete({
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature: 0.4,
+        maxTokens,
+        jsonObject: true,
+      })
+    )) || "{}";
   try {
     return JSON.parse(text);
   } catch {
@@ -60,9 +49,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const task = body.task as string;
-    const groq = getGroq();
-    if ("error" in groq) {
-      return NextResponse.json({ error: groq.error }, { status: 500 });
+    if (!hasLLMProvider()) {
+      return NextResponse.json(
+        { error: "No LLM provider configured. Add OPENAI_API_KEY or GROQ_API_KEY to .env.local." },
+        { status: 500 }
+      );
     }
 
     // 1) EXPAND — reformulate the query (multi-query) and draft a hypothetical
@@ -76,7 +67,7 @@ export async function POST(req: NextRequest) {
 
 Return ONLY valid JSON: {"variants": ["...", "..."], "hyde": "..."}`;
       const user = `USER QUERY:\n${query}\n\nReturn the JSON.`;
-      const parsed = (await jsonCompletion(groq, system, user, 700)) as {
+      const parsed = (await jsonCompletion(system, user, 700)) as {
         variants?: string[];
         hyde?: string;
       };
@@ -102,7 +93,7 @@ Return ONLY valid JSON: {"ranking":[{"id":"<id>","score":<0-100>}]} including ev
         .map((c) => `### id: ${c.id}\n${(c.text ?? "").slice(0, 500)}`)
         .join("\n\n")}\n\nReturn the JSON ranking.`;
 
-      const parsed = (await jsonCompletion(groq, system, user, 900)) as {
+      const parsed = (await jsonCompletion(system, user, 900)) as {
         ranking?: { id?: string; score?: number }[];
       };
       const ranking = (parsed.ranking ?? [])

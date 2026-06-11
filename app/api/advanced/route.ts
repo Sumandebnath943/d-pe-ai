@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { llmComplete, hasLLMProvider } from "@/lib/llm";
 import { GENERATION_SPEC } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
-
-const MODEL = "llama-3.3-70b-versatile";
 
 // The distinct strategies the candidate prompts are generated against. Keeping
 // them explicit makes the tournament's variety meaningful rather than random.
@@ -16,14 +14,6 @@ const STRATEGIES = [
 ];
 
 interface Message { role?: string; content?: string }
-
-function getGroq(): Groq | { error: string } {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey || apiKey === "your_groq_api_key_here") {
-    return { error: "Groq API key is not configured. Add GROQ_API_KEY to .env.local." };
-  }
-  return new Groq({ apiKey });
-}
 
 /**
  * Retry on Groq rate limits (429). The tournament fires many calls and can
@@ -57,24 +47,22 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
 
 /** Call Groq for a JSON object response and parse it robustly. */
 async function jsonCompletion(
-  groq: Groq,
   system: string,
   user: string,
   maxTokens = 4096
 ): Promise<unknown> {
-  const res = await withRetry(() =>
-    groq.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-      temperature: 0.7,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-    })
-  );
-  const text = res.choices[0]?.message?.content ?? "{}";
+  const text =
+    (await withRetry(() =>
+      llmComplete({
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature: 0.7,
+        maxTokens,
+        jsonObject: true,
+      })
+    )) || "{}";
   try {
     return JSON.parse(text);
   } catch {
@@ -86,19 +74,18 @@ async function jsonCompletion(
 }
 
 /** A plain-text completion (for running candidate prompts against test inputs). */
-async function textCompletion(groq: Groq, system: string, user: string, maxTokens = 1024): Promise<string> {
-  const res = await withRetry(() =>
-    groq.chat.completions.create({
-      model: MODEL,
+async function textCompletion(system: string, user: string, maxTokens = 1024): Promise<string> {
+  const text = await withRetry(() =>
+    llmComplete({
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
       temperature: 0.6,
-      max_tokens: maxTokens,
+      maxTokens,
     })
   );
-  return res.choices[0]?.message?.content?.trim() ?? "";
+  return text.trim();
 }
 
 function conversationToContext(messages: Message[]): string {
@@ -112,9 +99,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const task = body.task as string;
-    const groq = getGroq();
-    if ("error" in groq) {
-      return NextResponse.json({ error: groq.error }, { status: 500 });
+    if (!hasLLMProvider()) {
+      return NextResponse.json(
+        { error: "No LLM provider configured. Add OPENAI_API_KEY or GROQ_API_KEY to .env.local." },
+        { status: 500 }
+      );
     }
 
     // 1) CANDIDATES — produce N distinct full system prompts, one per strategy.
@@ -139,7 +128,7 @@ ${GENERATION_SPEC}`;
 
       const user = `INTERVIEW TRANSCRIPT:\n${context}\n\n${seed ? `A baseline prompt was already drafted (use it only as reference, you may improve on it):\n${seed}\n\n` : ""}Generate the ${STRATEGIES.length} candidate prompts now as JSON.`;
 
-      const parsed = (await jsonCompletion(groq, system, user, 6000)) as { candidates?: { id?: string; prompt?: string }[] };
+      const parsed = (await jsonCompletion(system, user, 6000)) as { candidates?: { id?: string; prompt?: string }[] };
       const raw = parsed.candidates ?? [];
       const candidates = STRATEGIES.map((s) => {
         const found = raw.find((c) => c.id === s.id) ?? raw[STRATEGIES.indexOf(s)];
@@ -162,7 +151,7 @@ ${GENERATION_SPEC}`;
 
 Return ONLY valid JSON: {"testcases":["<input 1>","<input 2>", ...]}`;
       const user = `INTERVIEW TRANSCRIPT:\n${context}\n\nGenerate ${count} test inputs as JSON.`;
-      const parsed = (await jsonCompletion(groq, system, user, 2048)) as { testcases?: string[] };
+      const parsed = (await jsonCompletion(system, user, 2048)) as { testcases?: string[] };
       const testcases = (parsed.testcases ?? []).filter((t) => typeof t === "string" && t.trim().length > 0).slice(0, count);
       return NextResponse.json({ testcases });
     }
@@ -172,7 +161,7 @@ Return ONLY valid JSON: {"testcases":["<input 1>","<input 2>", ...]}`;
       const prompt: string = body.prompt ?? "";
       const testcases: string[] = body.testcases ?? [];
       const outputs = await Promise.all(
-        testcases.map((tc) => textCompletion(groq, prompt, tc, 800))
+        testcases.map((tc) => textCompletion(prompt, tc, 800))
       );
       return NextResponse.json({ outputs });
     }
@@ -199,7 +188,7 @@ Return ONLY valid JSON:
         )
         .join("\n\n---\n\n")}\n\nEvaluate and return JSON.`;
 
-      const parsed = (await jsonCompletion(groq, system, user, 2048)) as {
+      const parsed = (await jsonCompletion(system, user, 2048)) as {
         scores?: { id?: string; score?: number; reasoning?: string }[];
         winnerId?: string;
       };
