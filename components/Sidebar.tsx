@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Session } from '@/lib/types'
 import MemoryDrawer from './MemoryDrawer'
 import DatasetPanel from './DatasetPanel'
+import Logo from './Logo'
 
 interface Props {
   sessions: Session[]
@@ -67,13 +68,9 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--accent)',
+              color: 'var(--text-1)',
             }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/>
-                <line x1="16" y1="8" x2="2" y2="22"/>
-                <line x1="17.5" y1="15" x2="9" y2="15"/>
-              </svg>
+              <Logo size={22} />
             </div>
             <span style={{ 
               fontFamily: 'var(--font-sans), sans-serif', 
