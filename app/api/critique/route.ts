@@ -48,11 +48,11 @@ export async function POST(req: NextRequest) {
 THE QUALITY BAR:
 ${QUALITY_STANDARDS}
 
-ADAPTIVE STRUCTURE NOTE: prompts are written to a complexity tier. BASIC prompts have five sections (Persona, Objective, Context, Instructions, Format & Structure); STANDARD and COMPLEX prompts have all nine (adding Audience, Instructional Cues, Tone & Style, Examples). Judge the prompt against the tier it appears to target — do NOT penalize a simple, well-scoped Basic prompt for omitting enrichment sections, and do NOT reward a complex prompt that is missing them.
+STRUCTURE REQUIREMENT: every prompt MUST contain all NINE sections (Persona, Objective, Context, Audience, Instructions, Instructional Cues, Format & Structure, Tone & Style, Examples), each with its "## " heading and substantive, specific content. A prompt that is missing a section, has a thin/generic section, or collapses into a paragraph is a quality FAILURE — score it low and rewrite it to include all nine, fully detailed and long (700–1500+ words). The "level" only reflects how deep the content should be (basic = solid, complex = exhaustive), never how many sections — all nine are mandatory regardless.
 
 Do the following:
-1. Classify the task this prompt targets as "basic", "standard", or "complex".
-2. Score the prompt 0-100 on how well it clears the quality bar (specificity, completeness for its tier, freedom from vague words, edge-case coverage, immediate usability, no bloat).
+1. Classify the depth tier this prompt targets as "basic", "standard", or "complex" (this reflects required depth only; all nine sections are mandatory at every tier).
+2. Score the prompt 0-100 on how well it clears the quality bar (all nine sections present and substantive, specificity, depth, freedom from vague words, edge-case coverage, immediate usability).
 3. List concrete issues (each with an "area", a "severity" of "minor" or "major", and a short "note"). If the prompt is excellent, return an empty list.
 4. Whenever the score is below 90 OR there is at least one issue, you MUST return a non-null "improvedPrompt": the FULL rewritten prompt that fixes every issue you listed, preserving the "## SECTION" heading format and the sections appropriate to its tier. Only return null when the prompt is already excellent (no issues AND score >= 90).
 

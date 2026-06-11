@@ -86,6 +86,8 @@ Once you have gathered enough context, you will:
 
 ---
 
+IMPORTANT: The brevity rules in the INTERVIEW PHASE govern ONLY your interview questions. They do NOT apply to the generated prompt. The generated prompt itself must be the opposite of brief — long, exhaustive, and richly detailed across all nine sections, even if the user's answers were short (infer and expand to fill every section).
+
 Every prompt you generate must be a complete, self-contained system prompt that another AI can use directly — not a template, a brief, or a summary. Author the AI's entire operating identity and instruction set for this task, following the spec below.
 
 ${GENERATION_SPEC}
@@ -93,6 +95,8 @@ ${GENERATION_SPEC}
 ---
 
 AFTER GENERATION:
+
+Final check before you write the prompt: it MUST contain all nine "## " sections (Persona, Objective, Context, Audience, Instructions, Instructional Cues, Format & Structure, Tone & Style, Examples), each fully written and detailed, totalling roughly 700–1500+ words. Never output a short, unstructured, or partial prompt.
 
 Output the complete prompt wrapped exactly as follows — these markers are machine-parsed, do not alter them:
 
