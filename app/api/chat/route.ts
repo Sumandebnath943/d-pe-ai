@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { GENERATION_SPEC } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +71,7 @@ INTERVIEW RULES:
 
 PHASE 2: GENERATION PHASE
 
-Once you have gathered complete context across all nine pillars, you will:
+Once you have gathered enough context, you will:
 
 1. Tell the user: "I now have everything I need. Generating your engineered prompt now..."
 
@@ -85,50 +86,9 @@ Once you have gathered complete context across all nine pillars, you will:
 
 ---
 
-GENERATED PROMPT STRUCTURE:
+Every prompt you generate must be a complete, self-contained system prompt that another AI can use directly — not a template, a brief, or a summary. Author the AI's entire operating identity and instruction set for this task, following the spec below.
 
-Every prompt you generate must be written as a complete, self-contained system prompt that another AI can use directly — not a template, not a brief, not a summary. Write it as if you are authoring the AI's entire operating identity and instruction set for this task.
-
-Structure every generated prompt with these sections in this order:
-
-## 👤 PERSONA
-Write a rich, detailed identity for the AI. Not just a job title — a fully developed character with a specific background, expertise, way of thinking, and professional ethos. At least 3-4 sentences. Make it feel like a real specialist, not a generic assistant. Use second person ("You are...").
-
-## 🎯 OBJECTIVE
-State the precise mission. What does this AI exist to do? What does a perfect output look like? What would make this prompt fail? Be specific enough that there is only one correct interpretation.
-
-## 🧠 CONTEXT
-Everything the AI needs to know about the world it operates in. The platform, the users, the domain, the constraints, the stakes. If the AI is customer-facing, describe the customers. If it handles sensitive topics, describe how. Make this section dense with relevant detail.
-
-## 🎯 AUDIENCE
-A precise portrait of who the AI is serving. Their background, vocabulary level, what they care about, what frustrates them, what earns their trust. The AI should be able to read this and immediately calibrate its tone and depth.
-
-## 📋 INSTRUCTIONS
-The operational rulebook. Write this as a numbered list of explicit, unambiguous directives. Cover: what to always do, what to never do, how to handle edge cases, how to handle requests outside scope, how to handle ambiguity. Minimum 10 instructions. Each one should be specific enough that violating it would be immediately obvious.
-
-## 🧩 INSTRUCTIONAL CUES
-Advanced behavioral directives. How should the AI reason before responding? Should it think step by step? Should it ask clarifying questions before acting? Should it self-critique its draft before outputting? Should it consider multiple approaches? Write these as specific cognitive and behavioral patterns, not vague suggestions.
-
-## 📝 FORMAT & STRUCTURE
-Exact output specifications. Every detail: length ranges, section headers, markdown usage, list vs paragraph, response opening conventions, response closing conventions, what to include, what to omit. If the output has a specific template, write the template here explicitly.
-
-## 🎨 TONE & STYLE
-More than just "professional" or "friendly" — describe the precise voice. What does it sound like when this AI is at its best? What words does it use? What words does it avoid? How does it handle uncertainty? How does it handle pushback? Give 2-3 example micro-phrases that capture the tone.
-
-## 💡 EXAMPLES
-If the user provided examples, include them here with annotations explaining what makes them ideal. If no examples were provided, generate 1-2 realistic examples of ideal inputs and outputs based on everything you know about this use case. Label them clearly as illustrative examples.
-
----
-
-QUALITY STANDARDS — NON-NEGOTIABLE:
-
-- Write the prompt as a direct address to the AI in second person throughout. No meta-commentary, no "this prompt will...". Just instructions.
-- Every instruction must be specific enough that two different AI models following it would produce similar outputs. If an instruction contains the words "appropriate", "relevant", "good", or "helpful" without further definition, rewrite it with concrete specifics.
-- Anticipate the top 3 ways this prompt could go wrong and write explicit instructions that prevent each failure mode.
-- Length is not a virtue, but completeness is. Write every word that earns its place. A 2000-word prompt that leaves nothing ambiguous is better than a 400-word prompt that forces the AI to guess.
-- The finished prompt must be immediately usable. Someone who has never spoken to you must be able to paste it into any LLM and get the intended output without modification.
-- Do not use placeholder text like "[insert X here]". Fill everything in based on what the user told you.
-- The Persona section must make the AI feel like a real specialist. Generic phrases like "You are a helpful AI assistant" are failures. Rewrite until the persona has genuine character and expertise.
+${GENERATION_SPEC}
 
 ---
 
@@ -143,24 +103,15 @@ Output the complete prompt wrapped exactly as follows — these markers are mach
 
 Then ask in one sentence: "Want me to refine any part of this?"`;
 
-const GENERATION_SYSTEM_PROMPT = `You are an expert prompt engineer. You have been given a complete context brief. Generate a production-ready system prompt that another AI can use directly — not a template or outline, but a fully written, self-contained set of instructions.
+const REVERSE_ENGINEER_SYSTEM_PROMPT = `You are an expert prompt engineer. The user has provided an example of a target output (e.g., an article, code, email, etc.) that they want to recreate. Your job is to REVERSE ENGINEER a perfect, production-ready system prompt that will generate an output exactly like the provided example in tone, style, structure, and quality.
 
-The prompt must include all nine sections in this order: Persona, Objective, Context, Audience, Instructions, Instructional Cues, Format & Structure, Tone & Style, Examples.
+Treat this as at least a STANDARD-tier task: write all nine sections. The Persona must match the kind of expert who would have authored the example. Crucially, under the "Examples" section you MUST include the user's provided text as the "Ideal Output Example", annotated with what makes it exemplary.
 
-Write in second person throughout. Every section must be fully written out — no placeholders, no "insert X here". The Persona must feel like a real specialist with genuine character. Instructions must be numbered, specific, and cover edge cases. Examples must be concrete and realistic.
+Author the prompt following the spec below.
 
-Output the prompt wrapped exactly as:
-[PROMPT_READY]
-[PROMPT_START]
-<full prompt>
-[PROMPT_END]`;
+${GENERATION_SPEC}
 
-const REVERSE_ENGINEER_SYSTEM_PROMPT = `You are an expert prompt engineer. The user has provided an example of a target output (e.g., an article, code, email, etc.) that they want to recreate. 
-Your job is to REVERSE ENGINEER a perfect, production-ready system prompt that will generate an output exactly like the provided example in tone, style, structure, and quality.
-
-The prompt must include all nine sections in this order: Persona, Objective, Context, Audience, Instructions, Instructional Cues, Format & Structure, Tone & Style, Examples.
-
-Write in second person throughout. The Persona must match the expert who would have written the example. Instructions must be highly specific. Crucially, under the "Examples" section, you MUST include the user's provided text as the "Ideal Output Example".
+---
 
 Output the prompt wrapped exactly as:
 [PROMPT_READY]
@@ -190,10 +141,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Set system prompt based on mode
-    let systemPrompt = INTERVIEW_SYSTEM_PROMPT;
-    if (mode === "generate") systemPrompt = GENERATION_SYSTEM_PROMPT;
-    if (mode === "reverse_engineer") systemPrompt = REVERSE_ENGINEER_SYSTEM_PROMPT;
+    // Set system prompt based on mode. Both the interview's Phase-2 generation
+    // and reverse-engineering share the same GENERATION_SPEC quality bar.
+    let systemPrompt =
+      mode === "reverse_engineer" ? REVERSE_ENGINEER_SYSTEM_PROMPT : INTERVIEW_SYSTEM_PROMPT;
 
     // Inject memory context if provided
     if (memories && typeof memories === "string" && memories.trim().length > 0) {
@@ -218,11 +169,16 @@ export async function POST(req: NextRequest) {
     // Initialize Groq client
     const groq = new Groq({ apiKey });
 
-    // Call Groq Chat Completions API with streaming
+    // Call Groq Chat Completions API with streaming.
+    // Temperature is pinned for consistent, reproducible generation — the
+    // interview is already tightly scripted by the system prompt, and the
+    // generated prompt benefits from low-variance, structured output.
     const stream = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: groqMessages,
       stream: true,
+      temperature: 0.4,
+      top_p: 0.9,
       max_tokens: 8192,
     });
 

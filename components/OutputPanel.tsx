@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from 'react'
-import { Tournament, ResponsibilityReport } from '@/lib/types'
+import { Tournament, ResponsibilityReport, QualityReport } from '@/lib/types'
 
 interface Props {
   prompt: string | null
@@ -11,6 +11,7 @@ interface Props {
   isLoadingChat: boolean
   tournament?: Tournament
   responsibility?: ResponsibilityReport
+  quality?: QualityReport
 }
 
 function parsePrompt(text: string) {
@@ -43,7 +44,7 @@ function getTimestamp() {
   return new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 }
 
-export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, responsibility }: Props) {
+export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, responsibility, quality }: Props) {
   const [copyState, setCopyState] = useState<'idle'|'copied'>('idle')
   const [shareState, setShareState] = useState<'idle'|'copied'>('idle')
   const [refineInput, setRefineInput] = useState('')
@@ -137,7 +138,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
       </div>
 
       {/* Content */}
-      {!prompt && !isGenerating && !tournament && !responsibility ? (
+      {!prompt && !isGenerating && !tournament && !responsibility && !quality ? (
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
@@ -159,6 +160,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
           padding: '28px 24px 16px'
         }}>
           {tournament && <TournamentView tournament={tournament} />}
+          {quality && <QualityReportView report={quality} />}
           {responsibility && <ResponsibilityReportView report={responsibility} />}
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: '20px' }}>
@@ -425,6 +427,98 @@ function TournamentView({ tournament }: { tournament: Tournament }) {
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Prompt-quality QA report: self-critique score + auto-improve + complexity tier.
+// ---------------------------------------------------------------------------
+function QualityReportView({ report }: { report: QualityReport }) {
+  const { status, score, level, summary, issues, improved, error } = report
+
+  const scoreColor = score >= 90 ? 'var(--green)' : score >= 70 ? '#d8a657' : '#cc5555'
+  const sevColor = (s: string) => (s === 'major' ? '#cc5555' : '#d8a657')
+  const levelLabel = level.charAt(0).toUpperCase() + level.slice(1)
+
+  return (
+    <div style={{
+      marginBottom: '22px',
+      border: '1px solid var(--border)',
+      borderRadius: '10px',
+      overflow: 'hidden',
+      background: 'var(--surface)',
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '12px 14px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '13px' }}>🔬</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>Quality Review</span>
+        </div>
+        {status === 'done' && (
+          <span style={{
+            fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
+            padding: '2px 8px', borderRadius: '10px',
+            color: 'var(--text-2)', background: 'var(--surface-2)',
+          }}>{levelLabel} tier</span>
+        )}
+      </div>
+
+      {status === 'reviewing' ? (
+        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            width: '10px', height: '10px', borderRadius: '50%',
+            border: '2px solid var(--accent)', borderTopColor: 'transparent',
+            animation: 'spin 0.8s linear infinite', flexShrink: 0,
+          }} />
+          <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>Auditing prompt quality…</span>
+        </div>
+      ) : status === 'error' ? (
+        <div style={{ padding: '12px 14px', fontSize: '12px', color: '#cc5555' }}>{error || 'Quality review failed.'}</div>
+      ) : (
+        <div style={{ padding: '12px 14px' }}>
+          {/* Score + summary */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: scoreColor }}>{score}</span>
+            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>/ 100 quality</span>
+          </div>
+          {summary && (
+            <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.6, marginBottom: '10px' }}>{summary}</div>
+          )}
+
+          {improved && (
+            <div style={{
+              fontSize: '11px', color: 'var(--accent)', background: 'var(--accent-light)',
+              border: '1px solid var(--accent-border)', borderRadius: '6px',
+              padding: '7px 10px', marginBottom: issues.length ? '10px' : 0, lineHeight: 1.5,
+            }}>
+              The reviewer strengthened the prompt — the version shown below is the improved one.
+            </div>
+          )}
+
+          {/* Issues (omitted when the prompt is already excellent) */}
+          {issues.map((iss, i) => (
+            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px' }}>
+              <span style={{
+                width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
+                background: sevColor(iss.severity), marginTop: '5px',
+              }} />
+              <div style={{ minWidth: 0 }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)' }}>{iss.area}</span>
+                <span style={{
+                  fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+                  marginLeft: '6px', color: sevColor(iss.severity),
+                }}>{iss.severity}</span>
+                <div style={{ fontSize: '11px', color: 'var(--text-3)', lineHeight: 1.5, marginTop: '2px' }}>{iss.note}</div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

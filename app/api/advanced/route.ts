@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
+import { GENERATION_SPEC } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +123,7 @@ export async function POST(req: NextRequest) {
       const seed: string | undefined = body.seedPrompt;
       const system = `You are an elite prompt engineer. Given an interview transcript describing what a user needs a prompt for, you write COMPLETE, production-ready system prompts.
 
-You will produce exactly ${STRATEGIES.length} candidate prompts, each following a DIFFERENT strategy. Each must be a full, self-contained system prompt (persona, objective, context, audience, instructions, format, tone, examples) — not a description of one.
+You will produce exactly ${STRATEGIES.length} candidate prompts, each following a DIFFERENT strategy. Each must be a full, self-contained system prompt — not a description of one. Every candidate must follow the shared generation spec below (adaptive structure + quality bar); the strategies differ only in APPROACH, never in completeness or quality.
 
 Return ONLY valid JSON of the shape:
 {"candidates":[{"id":"<strategy id>","prompt":"<the full system prompt as a single string>"}]}
@@ -130,7 +131,11 @@ Return ONLY valid JSON of the shape:
 The strategy ids and their required approaches:
 ${STRATEGIES.map((s) => `- "${s.id}" (${s.label}): ${s.strategy}`).join("\n")}
 
-Every candidate must fully satisfy the user's actual intent; they differ only in approach, not in what they accomplish.`;
+Every candidate must fully satisfy the user's actual intent; they differ only in approach, not in what they accomplish.
+
+---
+
+${GENERATION_SPEC}`;
 
       const user = `INTERVIEW TRANSCRIPT:\n${context}\n\n${seed ? `A baseline prompt was already drafted (use it only as reference, you may improve on it):\n${seed}\n\n` : ""}Generate the ${STRATEGIES.length} candidate prompts now as JSON.`;
 
