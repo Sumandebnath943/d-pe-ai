@@ -22,6 +22,28 @@ export interface Session {
   promptVersion?: number;
   tournament?: Tournament;
   responsibility?: ResponsibilityReport;
+  quality?: QualityReport;
+}
+
+// --- Prompt-quality self-critique (QA pass) ---
+
+export type QualityLevel = 'basic' | 'standard' | 'complex';
+
+export interface QualityIssue {
+  area: string;                    // e.g. "Specificity", "Edge cases", "Bloat"
+  severity: 'minor' | 'major';
+  note: string;
+}
+
+export interface QualityReport {
+  status: 'reviewing' | 'done' | 'error';
+  score: number;                   // 0-100 prompt-quality score
+  level: QualityLevel;             // task complexity the prompt was judged against
+  summary: string;
+  issues: QualityIssue[];
+  improved: boolean;               // whether the prompt was auto-strengthened
+  improvedPrompt?: string;         // present only when improved === true
+  error?: string;
 }
 
 // --- Responsible AI: constitutional critique-then-revise ---

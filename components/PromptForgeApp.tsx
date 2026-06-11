@@ -15,7 +15,8 @@ import { retrieveAdvanced } from "../lib/rag/advancedRetrieval";
 import { embedQuery } from "../lib/rag/embeddings";
 import { runTournament } from "../lib/advanced";
 import { runResponsibleReview } from "../lib/responsible";
-import { Tournament, ResponsibilityReport } from "../lib/types";
+import { runQualityCritique } from "../lib/critique";
+import { Tournament, ResponsibilityReport, QualityReport } from "../lib/types";
 import { motion } from "framer-motion";
 
 const FRESH_TOURNAMENT: Tournament = {
@@ -326,8 +327,8 @@ export default function PromptForgeApp() {
             : s
         )
       );
-      // Responsible-AI review on the tournament winner.
-      await runResponsible(sessionId, winningPrompt);
+      // QA-improve the winner, then run the responsible-AI review on it.
+      await finalizePrompt(sessionId, winningPrompt);
     } catch (err) {
       console.error("[Advanced] Tournament failed:", err);
       setSessions((prev) =>
@@ -404,6 +405,71 @@ export default function PromptForgeApp() {
         )
       );
     }
+  };
+
+  // Prompt-quality QA pass: critique the final prompt against the shared quality
+  // bar and, if the reviewer can strengthen it, promote the improved version.
+  // Returns the prompt to carry forward (improved or original).
+  const runQualityReview = async (sessionId: string, finalPrompt: string): Promise<string> => {
+    const reviewing: QualityReport = {
+      status: "reviewing",
+      score: 0,
+      level: "standard",
+      summary: "",
+      issues: [],
+      improved: false,
+    };
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, quality: reviewing } : s))
+    );
+
+    try {
+      const report = await runQualityCritique(finalPrompt);
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const next = { ...s, quality: report };
+          // The reviewer strengthened it — show the improved version.
+          if (report.improved && report.improvedPrompt) {
+            next.generatedPrompt = {
+              content: report.improvedPrompt,
+              createdAt: new Date(),
+              sessionId,
+            };
+          }
+          return next;
+        })
+      );
+      return report.improved && report.improvedPrompt ? report.improvedPrompt : finalPrompt;
+    } catch (err) {
+      console.error("[Quality] Review failed:", err);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                quality: {
+                  status: "error",
+                  score: 0,
+                  level: "standard",
+                  summary: "",
+                  issues: [],
+                  improved: false,
+                  error: err instanceof Error ? err.message : "Quality review failed.",
+                },
+              }
+            : s
+        )
+      );
+      return finalPrompt;
+    }
+  };
+
+  // Finalize pipeline: QA-improve the prompt, then run the responsible-AI review
+  // on the (possibly improved) version. Used by both Normal and Advanced modes.
+  const finalizePrompt = async (sessionId: string, prompt: string) => {
+    const improved = await runQualityReview(sessionId, prompt);
+    await runResponsible(sessionId, improved);
   };
 
   // Main chat sending execution with real streaming tokens
@@ -577,8 +643,8 @@ export default function PromptForgeApp() {
                 runAdvanced(activeSessionId, updatedMessages, promptText);
               } else {
                 setIsGeneratingPrompt(false);
-                // Responsible-AI review on the final prompt.
-                runResponsible(activeSessionId, promptText);
+                // QA-improve the prompt, then run the responsible-AI review.
+                finalizePrompt(activeSessionId, promptText);
               }
             } else {
               setIsGeneratingPrompt(false);
@@ -820,6 +886,7 @@ export default function PromptForgeApp() {
             isLoadingChat={isLoading}
             tournament={activeSession?.tournament}
             responsibility={activeSession?.responsibility}
+            quality={activeSession?.quality}
           />
             </div>
           </div>

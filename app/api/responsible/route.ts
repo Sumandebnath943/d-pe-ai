@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import { llmComplete, hasLLMProvider } from "@/lib/llm";
 import { CONSTITUTION, formatConstitution } from "@/lib/constitution";
 import type { RuleStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const MODEL = "llama-3.3-70b-versatile";
 
 async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
   let lastErr: unknown;
@@ -38,14 +36,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A prompt string is required." }, { status: 400 });
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey || apiKey === "your_groq_api_key_here") {
+    if (!hasLLMProvider()) {
       return NextResponse.json(
-        { error: "Groq API key is not configured. Add GROQ_API_KEY to .env.local." },
+        { error: "No LLM provider configured. Add OPENAI_API_KEY or GROQ_API_KEY to .env.local." },
         { status: 500 }
       );
     }
-    const groq = new Groq({ apiKey });
 
     const system = `You are a Responsible-AI reviewer. You audit a SYSTEM PROMPT (the instructions that will be given to another AI) against a written constitution, then, if anything breaches it, you rewrite the prompt into a safe version that preserves the user's legitimate intent.
 
@@ -72,20 +68,18 @@ Include a finding for every rule id in the constitution.`;
 
     const user = `SYSTEM PROMPT TO REVIEW:\n"""\n${prompt}\n"""\n\nReview it against the constitution and return the JSON.`;
 
-    const res = await withRetry(() =>
-      groq.chat.completions.create({
-        model: MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        temperature: 0.3,
-        max_tokens: 6000,
-        response_format: { type: "json_object" },
-      })
-    );
-
-    const raw = res.choices[0]?.message?.content ?? "{}";
+    const raw =
+      (await withRetry(() =>
+        llmComplete({
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          temperature: 0.3,
+          maxTokens: 6000,
+          jsonObject: true,
+        })
+      )) || "{}";
     let parsed: {
       score?: number;
       summary?: string;
