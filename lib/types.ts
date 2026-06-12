@@ -1,3 +1,5 @@
+import type { ReviewResult } from './review';
+
 export type MessageRole = 'user' | 'assistant';
 
 export interface Message {
@@ -21,6 +23,11 @@ export interface Session {
   generatedPrompt?: GeneratedPrompt;
   promptVersion?: number;
   tournament?: Tournament;
+  // Unified quality + constitutional review (replaces the separate
+  // `responsibility` and `quality` passes, which remain as dead types).
+  review?: ReviewResult;
+  reviewStatus?: 'reviewing' | 'done' | 'error';
+  reviewError?: string;
   responsibility?: ResponsibilityReport;
   quality?: QualityReport;
 }

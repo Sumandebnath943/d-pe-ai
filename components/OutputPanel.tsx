@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useRef, useEffect } from 'react'
-import { Tournament, ResponsibilityReport, QualityReport } from '@/lib/types'
+import { Tournament } from '@/lib/types'
+import type { ReviewResult } from '@/lib/review'
 
 interface Props {
   prompt: string | null
@@ -10,8 +11,9 @@ interface Props {
   onRefine: (text: string) => void
   isLoadingChat: boolean
   tournament?: Tournament
-  responsibility?: ResponsibilityReport
-  quality?: QualityReport
+  review?: ReviewResult
+  reviewStatus?: 'reviewing' | 'done' | 'error'
+  reviewError?: string
 }
 
 function parsePrompt(text: string) {
@@ -44,7 +46,8 @@ function getTimestamp() {
   return new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 }
 
-export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, responsibility, quality }: Props) {
+export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, review, reviewStatus, reviewError }: Props) {
+  const hasReview = reviewStatus === 'reviewing' || reviewStatus === 'error' || !!review
   const [copyState, setCopyState] = useState<'idle'|'copied'>('idle')
   const [shareState, setShareState] = useState<'idle'|'copied'>('idle')
   const [refineInput, setRefineInput] = useState('')
@@ -149,7 +152,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
       {isGenerating && <div className="ws-scan" style={{ zIndex: 5 }} />}
 
       {/* Content */}
-      {!prompt && !isGenerating && !tournament && !responsibility && !quality ? (
+      {!prompt && !isGenerating && !tournament && !hasReview ? (
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
@@ -172,8 +175,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
           padding: '28px 24px 16px'
         }}>
           {tournament && <TournamentView tournament={tournament} />}
-          {quality && <QualityReportView report={quality} />}
-          {responsibility && <ResponsibilityReportView report={responsibility} />}
+          {hasReview && <ReviewView review={review} status={reviewStatus} error={reviewError} />}
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: '20px' }}>
               {section.title && (
@@ -450,200 +452,198 @@ function TournamentView({ tournament }: { tournament: Tournament }) {
 }
 
 // ---------------------------------------------------------------------------
-// Prompt-quality QA report: self-critique score + auto-improve + complexity tier.
+// Unified review: engineering quality + constitutional responsibility in two
+// cards (kept visually separate per spec), with a single verdict line beneath.
 // ---------------------------------------------------------------------------
-function QualityReportView({ report }: { report: QualityReport }) {
-  const { status, score, level, summary, issues, improved, error } = report
+function ReviewView({
+  review,
+  status,
+  error,
+}: {
+  review?: ReviewResult
+  status?: 'reviewing' | 'done' | 'error'
+  error?: string
+}) {
+  const cardShell = {
+    marginBottom: '22px',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    background: 'var(--surface)',
+  } as const
 
-  const scoreColor = score >= 90 ? 'var(--green)' : score >= 70 ? '#d8a657' : '#cc5555'
-  const sevColor = (s: string) => (s === 'major' ? '#cc5555' : '#d8a657')
-  const levelLabel = level.charAt(0).toUpperCase() + level.slice(1)
-
-  return (
-    <div style={{
-      marginBottom: '22px',
-      border: '1px solid var(--border)',
-      borderRadius: '10px',
-      overflow: 'hidden',
-      background: 'var(--surface)',
-    }}>
-      {/* Header */}
-      <div style={{
+  const cardHeader = (emoji: string, title: string) => (
+    <div
+      style={{
         padding: '12px 14px',
         borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px' }}>🔬</span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>Quality Review</span>
-        </div>
-        {status === 'done' && (
-          <span style={{
-            fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
-            padding: '2px 8px', borderRadius: '10px',
-            color: 'var(--text-2)', background: 'var(--surface-2)',
-          }}>{levelLabel} tier</span>
-        )}
-      </div>
-
-      {status === 'reviewing' ? (
-        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            width: '10px', height: '10px', borderRadius: '50%',
-            border: '2px solid var(--accent)', borderTopColor: 'transparent',
-            animation: 'spin 0.8s linear infinite', flexShrink: 0,
-          }} />
-          <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>Auditing prompt quality…</span>
-        </div>
-      ) : status === 'error' ? (
-        <div style={{ padding: '12px 14px', fontSize: '12px', color: '#cc5555' }}>{error || 'Quality review failed.'}</div>
-      ) : (
-        <div style={{ padding: '12px 14px' }}>
-          {/* Score + summary */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: scoreColor }}>{score}</span>
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>/ 100 quality</span>
-          </div>
-          {summary && (
-            <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.6, marginBottom: '10px' }}>{summary}</div>
-          )}
-
-          {improved && (
-            <div style={{
-              fontSize: '11px', color: 'var(--accent)', background: 'var(--accent-light)',
-              border: '1px solid var(--accent-border)', borderRadius: '6px',
-              padding: '7px 10px', marginBottom: issues.length ? '10px' : 0, lineHeight: 1.5,
-            }}>
-              The reviewer strengthened the prompt — the version shown below is the improved one.
-            </div>
-          )}
-
-          {/* Issues (omitted when the prompt is already excellent) */}
-          {issues.map((iss, i) => (
-            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px' }}>
-              <span style={{
-                width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-                background: sevColor(iss.severity), marginTop: '5px',
-              }} />
-              <div style={{ minWidth: 0 }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)' }}>{iss.area}</span>
-                <span style={{
-                  fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-                  marginLeft: '6px', color: sevColor(iss.severity),
-                }}>{iss.severity}</span>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', lineHeight: 1.5, marginTop: '2px' }}>{iss.note}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+      }}
+    >
+      <span style={{ fontSize: '13px' }}>{emoji}</span>
+      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>{title}</span>
     </div>
   )
-}
 
-// ---------------------------------------------------------------------------
-// Responsible-AI report: constitutional critique + auto-revise verdict.
-// ---------------------------------------------------------------------------
-function ResponsibilityReportView({ report }: { report: ResponsibilityReport }) {
-  const { status, verdict, score, summary, findings, error } = report
+  const spinner = (
+    <span
+      style={{
+        width: '10px',
+        height: '10px',
+        borderRadius: '50%',
+        border: '2px solid var(--accent)',
+        borderTopColor: 'transparent',
+        animation: 'spin 0.8s linear infinite',
+        flexShrink: 0,
+      }}
+    />
+  )
 
-  const verdictMeta =
-    verdict === 'revised'
-      ? { label: 'Revised for safety', color: 'var(--accent)', bg: 'var(--accent-light)' }
-      : verdict === 'flagged'
-        ? { label: 'Flagged', color: '#cc5555', bg: 'rgba(255,68,68,0.08)' }
-        : { label: 'Responsible', color: 'var(--green)', bg: 'var(--green-light)' }
+  // Reviewing — single shell with a spinner (both axes are evaluated in one call).
+  if (status === 'reviewing') {
+    return (
+      <div style={cardShell}>
+        {cardHeader('🔍', 'Review')}
+        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {spinner}
+          <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>
+            Auditing quality &amp; constitution…
+          </span>
+        </div>
+      </div>
+    )
+  }
 
-  const statusDot = (s: string) =>
-    s === 'fail' ? '#cc5555' : s === 'warn' ? '#d8a657' : 'var(--green)'
+  // Error — or no result to render.
+  if (status === 'error' || !review) {
+    return (
+      <div style={cardShell}>
+        {cardHeader('🔍', 'Review')}
+        <div style={{ padding: '12px 14px', fontSize: '12px', color: '#cc5555' }}>
+          {error || 'Review failed.'}
+        </div>
+      </div>
+    )
+  }
 
-  const issues = findings.filter((f) => f.status !== 'pass')
-  const passCount = findings.filter((f) => f.status === 'pass').length
+  const { qualityScore, qualityIssues, constitutionViolations, rewrite, rewriteSkipped, verdict } = review
+  const scoreColor =
+    qualityScore >= 80 ? 'var(--green)' : qualityScore >= 60 ? '#d8a657' : '#cc5555'
 
   return (
-    <div style={{
-      marginBottom: '22px',
-      border: '1px solid var(--border)',
-      borderRadius: '10px',
-      overflow: 'hidden',
-      background: 'var(--surface)',
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: '12px 14px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '13px' }}>🛡️</span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>Responsibility Review</span>
-        </div>
-        {status === 'done' && (
-          <span style={{
-            fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
-            padding: '2px 8px', borderRadius: '10px',
-            color: verdictMeta.color, background: verdictMeta.bg,
-          }}>{verdictMeta.label}</span>
-        )}
-      </div>
-
-      {/* Reviewing / error / body */}
-      {status === 'reviewing' ? (
-        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            width: '10px', height: '10px', borderRadius: '50%',
-            border: '2px solid var(--accent)', borderTopColor: 'transparent',
-            animation: 'spin 0.8s linear infinite', flexShrink: 0,
-          }} />
-          <span style={{ fontSize: '12px', color: 'var(--text-2)' }}>Auditing against the constitution…</span>
-        </div>
-      ) : status === 'error' ? (
-        <div style={{ padding: '12px 14px', fontSize: '12px', color: '#cc5555' }}>{error || 'Review failed.'}</div>
-      ) : (
+    <>
+      {/* QUALITY CARD */}
+      <div style={cardShell}>
+        {cardHeader('🔬', 'Quality Review')}
         <div style={{ padding: '12px 14px' }}>
-          {/* Score + summary */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: verdictMeta.color }}>{score}</span>
-            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>/ 100 responsibility</span>
-          </div>
-          {summary && (
-            <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.6, marginBottom: '10px' }}>{summary}</div>
-          )}
-
-          {verdict === 'revised' && (
-            <div style={{
-              fontSize: '11px', color: 'var(--accent)', background: 'var(--accent-light)',
-              border: '1px solid var(--accent-border)', borderRadius: '6px',
-              padding: '7px 10px', marginBottom: '10px', lineHeight: 1.5,
-            }}>
-              A breach was found, so the prompt shown below is the auto-revised safe version.
-            </div>
-          )}
-
-          {/* Rule check summary */}
-          <div style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: issues.length ? '8px' : 0 }}>
-            {passCount}/{findings.length} rules passed
+          {/* Big colour-coded score */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '30px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: scoreColor, lineHeight: 1 }}>
+              {qualityScore}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>/ 100 quality</span>
           </div>
 
-          {/* Only surface non-passing rules to keep it focused */}
-          {issues.map((f) => (
-            <div key={f.ruleId} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px' }}>
-              <span style={{
-                width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-                background: statusDot(f.status), marginTop: '5px',
-              }} />
-              <div style={{ minWidth: 0 }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)' }}>{f.ruleTitle}</span>
-                <span style={{
-                  fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-                  marginLeft: '6px', color: statusDot(f.status),
-                }}>{f.status}</span>
-                <div style={{ fontSize: '11px', color: 'var(--text-3)', lineHeight: 1.5, marginTop: '2px' }}>{f.note}</div>
-              </div>
+          {/* Quality issues as bullets */}
+          {qualityIssues.map((iss, i) => (
+            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px' }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#d8a657', marginTop: '5px' }} />
+              <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 0 }}>{iss}</div>
             </div>
           ))}
+
+          {/* Rewrite indicator — three states: cleared, rewritten, or not produced */}
+          {rewriteSkipped ? (
+            <div
+              style={{
+                marginTop: qualityIssues.length ? '12px' : '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                color: 'var(--green)',
+                background: 'var(--green-light)',
+                border: '1px solid var(--green)',
+                borderRadius: '6px',
+                padding: '7px 10px',
+                lineHeight: 1.5,
+              }}
+            >
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
+              No rewrite needed — score cleared the threshold.
+            </div>
+          ) : !rewrite ? (
+            <div
+              style={{
+                marginTop: qualityIssues.length ? '12px' : '4px',
+                fontSize: '11px',
+                color: 'var(--text-3)',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                padding: '7px 10px',
+                lineHeight: 1.5,
+              }}
+            >
+              No rewrite was produced — see the issues and rule violations.
+            </div>
+          ) : (
+            <div
+              style={{
+                marginTop: qualityIssues.length ? '12px' : '4px',
+                fontSize: '11px',
+                color: 'var(--accent)',
+                background: 'var(--accent-light)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: '6px',
+                padding: '7px 10px',
+                lineHeight: 1.5,
+              }}
+            >
+              Rewrite generated — the version shown below is the improved one.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* RESPONSIBILITY CARD */}
+      <div style={cardShell}>
+        {cardHeader('🛡️', 'Responsibility Review')}
+        <div style={{ padding: '12px 14px' }}>
+          {constitutionViolations.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--green)' }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
+              All rules passed.
+            </div>
+          ) : (
+            constitutionViolations.map((rule, i) => (
+              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: i === 0 ? 0 : '8px' }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#cc5555', marginTop: '5px' }} />
+                <div style={{ fontSize: '12px', color: '#cc5555', lineHeight: 1.5, minWidth: 0, fontWeight: 600 }}>{rule}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* SINGLE VERDICT LINE beneath both cards */}
+      {verdict && (
+        <div
+          style={{
+            marginTop: '-10px',
+            marginBottom: '22px',
+            fontSize: '12px',
+            color: 'var(--text-3)',
+            fontStyle: 'italic',
+            lineHeight: 1.6,
+            padding: '0 2px',
+          }}
+        >
+          {verdict}
         </div>
       )}
-    </div>
+    </>
   )
 }

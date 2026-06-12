@@ -14,9 +14,8 @@ import { buildHybridIndex, searchHybrid, formatRagContext, HybridIndex, ChunkFil
 import { retrieveAdvanced } from "../lib/rag/advancedRetrieval";
 import { embedQuery } from "../lib/rag/embeddings";
 import { runTournament } from "../lib/advanced";
-import { runResponsibleReview } from "../lib/responsible";
-import { runQualityCritique } from "../lib/critique";
-import { Tournament, ResponsibilityReport, QualityReport } from "../lib/types";
+import { Tournament } from "../lib/types";
+import type { ReviewResult } from "../lib/review";
 import { motion } from "framer-motion";
 
 const FRESH_TOURNAMENT: Tournament = {
@@ -358,125 +357,63 @@ export default function PromptForgeApp() {
     }
   };
 
-  // Responsible-AI pass: critique the final prompt against the constitution and,
-  // if it breaches anything, promote the auto-revised safe version. Runs in both
+  // Unified review pass: score engineering quality AND check the constitution
+  // in ONE API call (replaces the separate quality + responsible passes). If the
+  // reviewer returns a rewrite (low score or a constitution breach), promote it.
+  const runReview = async (sessionId: string, finalPrompt: string) => {
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, reviewStatus: "reviewing", reviewError: undefined } : s
+      )
+    );
+
+    try {
+      const res = await fetch("/api/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: finalPrompt }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Review failed.");
+      }
+      const review: ReviewResult = await res.json();
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const next = { ...s, review, reviewStatus: "done" as const };
+          // A rewrite means the prompt fell short on quality or breached a rule —
+          // show the corrected version.
+          if (!review.rewriteSkipped && review.rewrite) {
+            next.generatedPrompt = {
+              content: review.rewrite,
+              createdAt: new Date(),
+              sessionId,
+            };
+          }
+          return next;
+        })
+      );
+    } catch (err) {
+      console.error("[Review] Review failed:", err);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                reviewStatus: "error",
+                reviewError: err instanceof Error ? err.message : "Review failed.",
+              }
+            : s
+        )
+      );
+    }
+  };
+
+  // Finalize pipeline: run the unified review on the final prompt. Used by both
   // Normal and Advanced modes once a final prompt exists.
-  const runResponsible = async (sessionId: string, finalPrompt: string) => {
-    const reviewing: ResponsibilityReport = {
-      status: "reviewing",
-      verdict: "safe",
-      score: 0,
-      summary: "",
-      findings: [],
-      revised: false,
-    };
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, responsibility: reviewing } : s))
-    );
-
-    try {
-      const report = await runResponsibleReview(finalPrompt);
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== sessionId) return s;
-          const next = { ...s, responsibility: report };
-          // A breach was found and rewritten — show the safe version.
-          if (report.verdict === "revised" && report.revisedPrompt) {
-            next.generatedPrompt = {
-              content: report.revisedPrompt,
-              createdAt: new Date(),
-              sessionId,
-            };
-          }
-          return next;
-        })
-      );
-    } catch (err) {
-      console.error("[Responsible] Review failed:", err);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                responsibility: {
-                  status: "error",
-                  verdict: "safe",
-                  score: 0,
-                  summary: "",
-                  findings: [],
-                  revised: false,
-                  error: err instanceof Error ? err.message : "Safety review failed.",
-                },
-              }
-            : s
-        )
-      );
-    }
-  };
-
-  // Prompt-quality QA pass: critique the final prompt against the shared quality
-  // bar and, if the reviewer can strengthen it, promote the improved version.
-  // Returns the prompt to carry forward (improved or original).
-  const runQualityReview = async (sessionId: string, finalPrompt: string): Promise<string> => {
-    const reviewing: QualityReport = {
-      status: "reviewing",
-      score: 0,
-      level: "standard",
-      summary: "",
-      issues: [],
-      improved: false,
-    };
-    setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, quality: reviewing } : s))
-    );
-
-    try {
-      const report = await runQualityCritique(finalPrompt);
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== sessionId) return s;
-          const next = { ...s, quality: report };
-          // The reviewer strengthened it — show the improved version.
-          if (report.improved && report.improvedPrompt) {
-            next.generatedPrompt = {
-              content: report.improvedPrompt,
-              createdAt: new Date(),
-              sessionId,
-            };
-          }
-          return next;
-        })
-      );
-      return report.improved && report.improvedPrompt ? report.improvedPrompt : finalPrompt;
-    } catch (err) {
-      console.error("[Quality] Review failed:", err);
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                quality: {
-                  status: "error",
-                  score: 0,
-                  level: "standard",
-                  summary: "",
-                  issues: [],
-                  improved: false,
-                  error: err instanceof Error ? err.message : "Quality review failed.",
-                },
-              }
-            : s
-        )
-      );
-      return finalPrompt;
-    }
-  };
-
-  // Finalize pipeline: QA-improve the prompt, then run the responsible-AI review
-  // on the (possibly improved) version. Used by both Normal and Advanced modes.
   const finalizePrompt = async (sessionId: string, prompt: string) => {
-    const improved = await runQualityReview(sessionId, prompt);
-    await runResponsible(sessionId, improved);
+    await runReview(sessionId, prompt);
   };
 
   // Main chat sending execution with real streaming tokens
@@ -924,8 +861,9 @@ export default function PromptForgeApp() {
             onRefine={handleRefine}
             isLoadingChat={isLoading}
             tournament={activeSession?.tournament}
-            responsibility={activeSession?.responsibility}
-            quality={activeSession?.quality}
+            review={activeSession?.review}
+            reviewStatus={activeSession?.reviewStatus}
+            reviewError={activeSession?.reviewError}
           />
             </div>
           </div>
