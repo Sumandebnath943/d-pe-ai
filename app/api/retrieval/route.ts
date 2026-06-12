@@ -3,7 +3,7 @@ import { llmComplete, hasLLMProvider } from "@/lib/llm";
 
 export const dynamic = "force-dynamic";
 
-/** Retry on Groq rate limits (429), honoring the "try again in Xs" hint when present. */
+/** Retry on LLM provider rate limits (429), honoring the "try again in Xs" hint when present. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {

@@ -16,7 +16,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
       const isRateLimit = err.status === 429 || /rate_limit|429/i.test(err.message ?? "");
       if (!isRateLimit || i === tries - 1) {
         if (isRateLimit) {
-          throw new Error("Groq rate limit reached during the safety review. Try again shortly.");
+          throw new Error("LLM rate limit reached during the safety review. Try again shortly.");
         }
         throw e;
       }

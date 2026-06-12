@@ -1,22 +1,29 @@
 /**
- * LLM provider abstraction — OpenAI primary, Groq fallback.
+ * LLM provider abstraction — provider chosen by LLM_PROVIDER, with fallback.
  *
  * Every server route calls through here instead of instantiating a provider
- * directly. Behaviour:
- *   - If OPENAI_API_KEY is set, OpenAI (gpt-4o-mini) is tried first.
- *   - On ANY OpenAI failure (missing key, auth, rate limit, network), it falls
- *     back to Groq (llama-3.3-70b-versatile) — the previous behaviour.
- *   - If only GROQ_API_KEY is set, it behaves exactly as before.
+ * directly. Provider routing (see providerOrder):
+ *   - LLM_PROVIDER=openai → OpenAI (default model gpt-4o-mini) is tried first.
+ *   - LLM_PROVIDER=groq   → Groq (llama-3.3-70b-versatile) is tried first.
+ *   - LLM_PROVIDER unset  → OpenAI first if OPENAI_API_KEY is set, else Groq.
+ *   The other configured provider is used as an automatic fallback on error.
+ *   So switching providers is a single env-var change (LLM_PROVIDER).
  *
- * gpt-4o-mini is chosen because it is a drop-in for the existing call shape:
- * it accepts temperature, a token cap, response_format json_object, and
- * streaming identically to Groq, so route behaviour is unchanged — only the
- * provider routing differs.
+ * The OpenAI model is read from OPENAI_MODEL (default gpt-4o-mini). gpt-4o-mini
+ * is a drop-in for the existing call shape: it accepts temperature, a token cap,
+ * response_format json_object, and streaming identically to Groq, so route
+ * behaviour is unchanged — only the provider routing differs.
+ *
+ * Note: OpenAI prompt-caching is automatic (no cache_control parameter); the
+ * Anthropic-style cache_control field is intentionally NOT used here.
  */
 import OpenAI from 'openai'
 import Groq from 'groq-sdk'
 
-export const OPENAI_MODEL = 'gpt-4o-mini'
+/** OpenAI model id, overridable via OPENAI_MODEL env (defaults to gpt-4o-mini). */
+export function openAIModel(): string {
+  return process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+}
 export const GROQ_MODEL = 'llama-3.3-70b-versatile'
 
 export type LLMRole = 'system' | 'user' | 'assistant'
@@ -48,18 +55,43 @@ export function hasLLMProvider(): boolean {
   return !!(getOpenAI() || getGroq())
 }
 
+type Provider = 'openai' | 'groq'
+
+/** The set of providers that actually have a usable key. */
+function configuredProviders(): Set<Provider> {
+  const s = new Set<Provider>()
+  if (getOpenAI()) s.add('openai')
+  if (getGroq()) s.add('groq')
+  return s
+}
+
+/**
+ * Ordered list of providers to attempt: the LLM_PROVIDER choice first, the other
+ * configured provider as fallback. When LLM_PROVIDER is unset we default to
+ * OpenAI-first (if its key is present), preserving the previous behaviour.
+ * Only providers that are actually configured are included.
+ */
+function providerOrder(): Provider[] {
+  const configured = configuredProviders()
+  const pref = process.env.LLM_PROVIDER?.trim().toLowerCase()
+  let primary: Provider
+  if (pref === 'groq') primary = 'groq'
+  else if (pref === 'openai') primary = 'openai'
+  else primary = configured.has('openai') ? 'openai' : 'groq'
+  const secondary: Provider = primary === 'openai' ? 'groq' : 'openai'
+  return [primary, secondary].filter((p) => configured.has(p))
+}
+
 /** Which provider will be tried first — useful for logging/diagnostics. */
-export function primaryProvider(): 'openai' | 'groq' | 'none' {
-  if (getOpenAI()) return 'openai'
-  if (getGroq()) return 'groq'
-  return 'none'
+export function primaryProvider(): Provider | 'none' {
+  return providerOrder()[0] ?? 'none'
 }
 
 // Build provider-specific create() params from the unified options. The only
 // cross-provider difference is the token-cap field name.
-function buildParams(provider: 'openai' | 'groq', opts: LLMOptions, stream: boolean) {
+function buildParams(provider: Provider, opts: LLMOptions, stream: boolean) {
   const params: Record<string, unknown> = {
-    model: provider === 'openai' ? OPENAI_MODEL : GROQ_MODEL,
+    model: provider === 'openai' ? openAIModel() : GROQ_MODEL,
     messages: opts.messages,
     stream,
   }
@@ -76,56 +108,62 @@ function buildParams(provider: 'openai' | 'groq', opts: LLMOptions, stream: bool
 const NO_PROVIDER =
   'No LLM provider configured. Add OPENAI_API_KEY (primary) or GROQ_API_KEY (fallback) to .env.local.'
 
-/**
- * Non-streaming completion. Tries OpenAI, falls back to Groq on any error.
- * Returns the assistant message text.
- */
-export async function llmComplete(opts: LLMOptions): Promise<string> {
-  const oa = getOpenAI()
-  if (oa) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const res = (await oa.chat.completions.create(buildParams('openai', opts, false) as any)) as any
-      return res.choices?.[0]?.message?.content ?? ''
-    } catch (err) {
-      console.error('[LLM] OpenAI completion failed, falling back to Groq:', err)
-    }
-  }
-  const gq = getGroq()
-  if (!gq) throw new Error(NO_PROVIDER)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const res = (await gq.chat.completions.create(buildParams('groq', opts, false) as any)) as any
-  return res.choices?.[0]?.message?.content ?? ''
+/** The configured SDK client for a provider, or null if it has no key. */
+function clientFor(provider: Provider): OpenAI | Groq | null {
+  return provider === 'openai' ? getOpenAI() : getGroq()
 }
 
 /**
- * Streaming completion. Tries OpenAI; if the stream fails BEFORE emitting any
- * token, falls back to Groq. (A mid-stream failure is re-thrown — we can't
- * safely restart a half-emitted stream.) Yields text deltas.
+ * Non-streaming completion. Tries providers in providerOrder() (LLM_PROVIDER
+ * choice first), falling back to the next on any error. Returns the assistant
+ * message text.
+ */
+export async function llmComplete(opts: LLMOptions): Promise<string> {
+  const order = providerOrder()
+  if (order.length === 0) throw new Error(NO_PROVIDER)
+  let lastErr: unknown
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i]
+    const client = clientFor(provider)
+    if (!client) continue
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = (await (client as any).chat.completions.create(buildParams(provider, opts, false))) as any
+      return res.choices?.[0]?.message?.content ?? ''
+    } catch (err) {
+      lastErr = err
+      if (i === order.length - 1) throw err
+      console.error(`[LLM] ${provider} completion failed, falling back to ${order[i + 1]}:`, err)
+    }
+  }
+  throw lastErr ?? new Error(NO_PROVIDER)
+}
+
+/**
+ * Streaming completion. Tries providers in providerOrder(); if a stream fails
+ * BEFORE emitting any token, falls back to the next provider. (A mid-stream
+ * failure is re-thrown — we can't safely restart a half-emitted stream.)
+ * Yields text deltas.
  */
 export async function* llmStream(opts: LLMOptions): AsyncGenerator<string> {
-  const oa = getOpenAI()
-  if (oa) {
+  const order = providerOrder()
+  if (order.length === 0) throw new Error(NO_PROVIDER)
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i]
+    const client = clientFor(provider)
+    if (!client) continue
     let emitted = false
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const stream = (await oa.chat.completions.create(buildParams('openai', opts, true) as any)) as any
+      const stream = (await (client as any).chat.completions.create(buildParams(provider, opts, true))) as any
       for await (const chunk of stream) {
         const t = chunk.choices?.[0]?.delta?.content
         if (t) { emitted = true; yield t }
       }
       return
     } catch (err) {
-      if (emitted) throw err
-      console.error('[LLM] OpenAI stream failed before output, falling back to Groq:', err)
+      if (emitted || i === order.length - 1) throw err
+      console.error(`[LLM] ${provider} stream failed before output, falling back to ${order[i + 1]}:`, err)
     }
-  }
-  const gq = getGroq()
-  if (!gq) throw new Error(NO_PROVIDER)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stream = (await gq.chat.completions.create(buildParams('groq', opts, true) as any)) as any
-  for await (const chunk of stream) {
-    const t = chunk.choices?.[0]?.delta?.content
-    if (t) yield t
   }
 }

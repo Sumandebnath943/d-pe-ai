@@ -16,9 +16,10 @@ const STRATEGIES = [
 interface Message { role?: string; content?: string }
 
 /**
- * Retry on Groq rate limits (429). The tournament fires many calls and can
- * exceed the tokens-per-minute budget on the free tier; Groq tells us how long
- * to wait, so we back off and retry rather than failing the whole tournament.
+ * Retry on LLM provider rate limits (429). The tournament fires many calls and
+ * can exceed the tokens-per-minute budget on the free tier; the provider tells
+ * us how long to wait, so we back off and retry rather than failing the whole
+ * tournament.
  */
 async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
   let lastErr: unknown;
@@ -31,7 +32,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
       const isRateLimit = err.status === 429 || /rate_limit|429/i.test(err.message ?? "");
       if (!isRateLimit || i === tries - 1) {
         if (isRateLimit) {
-          throw new Error("Groq rate limit reached — the tournament needs more tokens per minute than the current tier allows. Try again shortly, or use Normal mode.");
+          throw new Error("LLM rate limit reached — the tournament needs more tokens per minute than the current tier allows. Try again shortly, or use Normal mode.");
         }
         throw e;
       }
@@ -45,7 +46,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
   throw lastErr;
 }
 
-/** Call Groq for a JSON object response and parse it robustly. */
+/** Call the LLM for a JSON object response and parse it robustly. */
 async function jsonCompletion(
   system: string,
   user: string,

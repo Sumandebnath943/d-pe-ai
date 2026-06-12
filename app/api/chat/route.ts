@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
-    // Stream via the provider abstraction (OpenAI primary, Groq fallback).
+    // Stream via the provider abstraction (provider chosen by LLM_PROVIDER, with fallback).
     // Temperature is pinned for consistent, reproducible generation — the
     // interview is already tightly scripted by the system prompt, and the
     // generated prompt benefits from low-variance, structured output.
@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error in PromptForge Groq Chat Route:", error);
+    console.error("Error in PromptForge Chat Route:", error);
     const message = error instanceof Error ? error.message : "An unexpected error occurred.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

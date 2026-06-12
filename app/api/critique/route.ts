@@ -4,7 +4,7 @@ import { QUALITY_STANDARDS } from "@/lib/promptSpec";
 
 export const dynamic = "force-dynamic";
 
-/** Retry on Groq rate limits (429), honoring the "try again in Xs" hint. */
+/** Retry on LLM provider rate limits (429), honoring the "try again in Xs" hint. */
 async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < tries; i++) {
@@ -16,7 +16,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
       const isRateLimit = err.status === 429 || /rate_limit|429/i.test(err.message ?? "");
       if (!isRateLimit || i === tries - 1) {
         if (isRateLimit) {
-          throw new Error("Groq rate limit reached during the quality review. Try again shortly.");
+          throw new Error("LLM rate limit reached during the quality review. Try again shortly.");
         }
         throw e;
       }
