@@ -909,6 +909,7 @@ export default function PromptForgeApp() {
           isLoading={isLoading}
           onSend={handleSend}
           onStartOver={handleStartOver}
+          interviewActive={messages.length > 0 && !generatedPrompt && !isGeneratingPrompt}
         />
       </div>
 

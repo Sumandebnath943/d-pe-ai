@@ -24,6 +24,8 @@ export interface PromptBrief {
 
 const SYSTEM_PROMPT = `You are extracting structured requirements from an interview transcript. Read the conversation and populate every field of the JSON structure below. Be complete — do not leave any field empty. If a field was not discussed, make a reasonable inference from context. Respond ONLY with a single valid JSON object. No preamble. No markdown. No code fences.
 
+Note: the interview used a 4-turn grouped format, so each turn covered multiple pillars at once. Extract each pillar individually regardless of how they were grouped in the conversation — do not miss a field just because it was discussed alongside others.
+
 Capture the SPECIFIC value the user actually mentioned, not a generic description. If they said "sarcastic and direct", capture "sarcastic and direct", not "casual". Use their exact persona, audience, domain, constraints, and examples — never flatten them into vague words like "professional", "helpful", or "general purpose".
 
 Required JSON structure:

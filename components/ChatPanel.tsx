@@ -11,9 +11,14 @@ interface Props {
   isLoading: boolean
   onSend: (text: string, isReverseEngineer?: boolean) => void
   onStartOver?: () => void
+  // True while a grouped interview is in progress (messages exist, no prompt yet).
+  interviewActive?: boolean
 }
 
-export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: Props) {
+// The four themed interview turns, in order — drives the progress indicator.
+const INTERVIEW_GROUPS = ['Task + domain', 'Who + voice', 'Rules + edge cases', 'Examples + format']
+
+export default function ChatPanel({ messages, isLoading, onSend, onStartOver, interviewActive }: Props) {
   const [input, setInput] = useState('')
   const [isReverseEngineer, setIsReverseEngineer] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -59,6 +64,13 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
 
   const canSend = input.trim().length > 0 && !isLoading
 
+  // Best-effort interview step (1–4). The model drives the real turn order, so
+  // this estimates the current group from the number of questions asked, capped
+  // at 4. Within-turn follow-ups may advance it early — it's a guide, not exact.
+  const assistantTurns = messages.filter((m) => m.role === 'assistant' && m.content.trim().length > 0).length
+  const step = Math.min(Math.max(assistantTurns, 1), 4)
+  const showStepper = !!interviewActive && messages.length > 0
+
   return (
     <div style={{
       flex: 1,
@@ -84,6 +96,34 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
         }}
       >
         {messages.length === 0 && !isLoading && <EmptyState onSend={onSend} />}
+
+        {showStepper && (
+          <div style={{ maxWidth: '680px', margin: '0 auto 18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Interview · step {step} of 4
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--accent-soft)' }}>
+                {INTERVIEW_GROUPS[step - 1]}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  style={{
+                    flex: 1,
+                    height: '3px',
+                    borderRadius: '2px',
+                    background: i < step ? 'var(--accent)' : 'var(--border)',
+                    transition: 'background 0.3s ease',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {messages.map(msg => (
           <MessageBubble key={msg.id} role={msg.role} content={msg.content} />
         ))}
