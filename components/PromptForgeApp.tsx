@@ -5,7 +5,8 @@ import { Message, Session } from "../lib/types";
 import Sidebar from "./Sidebar";
 import ChatPanel from "./ChatPanel";
 import OutputPanel from "./OutputPanel";
-import { streamChat } from "../lib/streaming";
+import { streamChat, fetchBrief, streamGenerate } from "../lib/streaming";
+import type { PromptBrief } from "../lib/briefExtract";
 import { loadSessions, saveSessions } from "../lib/sessions";
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { getMemories, formatMemoriesForPrompt } from "../lib/memory";
@@ -416,6 +417,98 @@ export default function PromptForgeApp() {
     await runReview(sessionId, prompt);
   };
 
+  // Distill → generate. When the interview signals [PROMPT_READY] (without
+  // generating inline), we (1) distill the transcript into a compact brief via
+  // /api/brief, then (2) stream the focused generation step from that brief.
+  // If extraction fails, we fall back to generating from the full transcript so
+  // the user always gets a prompt — just via the more expensive path.
+  const runBriefAndGenerate = async (sessionId: string, conversation: Message[]) => {
+    setIsGeneratingPrompt(true);
+
+    const history = conversation
+      .filter((m) => m.content && m.content.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    // 1) Distill into a brief; on failure, fall back to the full transcript.
+    let brief: PromptBrief | null = null;
+    try {
+      brief = await fetchBrief(history);
+      const captured = brief;
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, brief: captured } : s))
+      );
+    } catch (briefError) {
+      console.warn("Brief extraction failed, falling back to full history:", briefError);
+      brief = null;
+    }
+
+    const transcript = history
+      .map((m) => `${m.role === "assistant" ? "INTERVIEWER" : "USER"}: ${m.content}`)
+      .join("\n\n");
+
+    // 2) Stream the generation step (from the brief, or the transcript fallback).
+    let genResponse = "";
+    try {
+      await streamGenerate(
+        brief ? { brief } : { transcript },
+        (token) => {
+          genResponse += token;
+        },
+        () => {
+          const startTag = "[PROMPT_START]";
+          const endTag = "[PROMPT_END]";
+          const startIndex = genResponse.indexOf(startTag);
+          const endIndex = genResponse.indexOf(endTag);
+          const promptText =
+            startIndex !== -1 && endIndex !== -1
+              ? genResponse.substring(startIndex + startTag.length, endIndex).trim()
+              : genResponse.trim();
+
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? {
+                    ...s,
+                    generatedPrompt: { content: promptText, createdAt: new Date(), sessionId },
+                  }
+                : s
+            )
+          );
+
+          if (mode === "advanced") {
+            runAdvanced(sessionId, conversation, promptText);
+          } else {
+            setIsGeneratingPrompt(false);
+            finalizePrompt(sessionId, promptText);
+          }
+        }
+      );
+    } catch (genErr) {
+      console.error("[Generate] Generation failed:", genErr);
+      setIsGeneratingPrompt(false);
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId
+            ? {
+                ...s,
+                messages: [
+                  ...s.messages,
+                  {
+                    id: `msg-${Date.now()}-generr`,
+                    role: "assistant" as const,
+                    content: `⚠️ Generation failed: ${
+                      genErr instanceof Error ? genErr.message : "unknown error"
+                    }`,
+                    timestamp: new Date(),
+                  },
+                ],
+              }
+            : s
+        )
+      );
+    }
+  };
+
   // Main chat sending execution with real streaming tokens
   const handleSend = async (text: string, isReverseEngineer: boolean = false) => {
     if (!activeSessionId) return;
@@ -550,49 +643,60 @@ export default function PromptForgeApp() {
           setIsLoading(false);
 
           const readyIndex = fullResponse.indexOf("[PROMPT_READY]");
-          if (readyIndex !== -1) {
-            const startTag = "[PROMPT_START]";
-            const endTag = "[PROMPT_END]";
-            const startIndex = fullResponse.indexOf(startTag);
-            const endIndex = fullResponse.indexOf(endTag);
+          if (readyIndex === -1) return; // still interviewing — nothing to finalize
 
-            if (startIndex !== -1 && endIndex !== -1) {
-              const promptText = fullResponse
-                .substring(startIndex + startTag.length, endIndex)
-                .trim();
-              const cleanChatText = fullResponse.substring(0, readyIndex).trim();
+          const startTag = "[PROMPT_START]";
+          const endTag = "[PROMPT_END]";
+          const startIndex = fullResponse.indexOf(startTag);
+          const endIndex = fullResponse.indexOf(endTag);
+          const cleanChatText = fullResponse.substring(0, readyIndex).trim();
 
-              setSessions((prev) =>
-                prev.map((s) => {
-                  if (s.id === activeSessionId) {
-                    return {
+          // Strip the readiness marker (and any inline prompt) from the chat bubble.
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeSessionId
+                ? {
+                    ...s,
+                    messages: s.messages.map((m) =>
+                      m.id === aiMessageId ? { ...m, content: cleanChatText } : m
+                    ),
+                  }
+                : s
+            )
+          );
+
+          if (startIndex !== -1 && endIndex !== -1) {
+            // Inline generation (reverse-engineer path) — the prompt is already here.
+            const promptText = fullResponse
+              .substring(startIndex + startTag.length, endIndex)
+              .trim();
+
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === activeSessionId
+                  ? {
                       ...s,
-                      messages: s.messages.map((m) =>
-                        m.id === aiMessageId ? { ...m, content: cleanChatText } : m
-                      ),
                       generatedPrompt: {
                         content: promptText,
                         createdAt: new Date(),
                         sessionId: activeSessionId,
                       },
-                    };
-                  }
-                  return s;
-                })
-              );
+                    }
+                  : s
+              )
+            );
 
-              // Normal mode: the seed prompt is the final answer.
-              // Advanced mode: run the tournament and promote the winner.
-              if (mode === "advanced") {
-                runAdvanced(activeSessionId, updatedMessages, promptText);
-              } else {
-                setIsGeneratingPrompt(false);
-                // QA-improve the prompt, then run the responsible-AI review.
-                finalizePrompt(activeSessionId, promptText);
-              }
+            if (mode === "advanced") {
+              runAdvanced(activeSessionId, updatedMessages, promptText);
             } else {
               setIsGeneratingPrompt(false);
+              finalizePrompt(activeSessionId, promptText);
             }
+          } else {
+            // Interview path — no inline prompt. Distill the interview into a
+            // brief, then generate the prompt from it (two cheaper calls).
+            setIsGeneratingPrompt(true);
+            runBriefAndGenerate(activeSessionId, updatedMessages);
           }
         },
         memoriesText || undefined,
@@ -861,6 +965,7 @@ export default function PromptForgeApp() {
             onRefine={handleRefine}
             isLoadingChat={isLoading}
             tournament={activeSession?.tournament}
+            brief={activeSession?.brief}
             review={activeSession?.review}
             reviewStatus={activeSession?.reviewStatus}
             reviewError={activeSession?.reviewError}

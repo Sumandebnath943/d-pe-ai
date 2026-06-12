@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { llmStream, hasLLMProvider } from "@/lib/llm";
 import { GENERATION_SPEC } from "@/lib/promptSpec";
+import { GENERATION_SYSTEM_PROMPT } from "@/lib/prompts";
+import type { PromptBrief } from "@/lib/briefExtract";
 
 export const dynamic = "force-dynamic";
 
 // ============================================================================
 // INTERVIEW SYSTEM PROMPT — instruction audit checklist
 // Every numbered rule below is preserved verbatim-in-meaning by the compressed
-// prompt that follows. (Compressed from ~1,576 -> ~700 authored tokens; the
-// shared GENERATION_SPEC is still interpolated unchanged.)
+// prompt that follows. (Compressed from ~1,576 -> ~700 authored tokens. Phase 2
+// is now a HANDOFF: this prompt no longer generates inline, so GENERATION_SPEC
+// is NO LONGER interpolated here — a separate generation step builds the prompt.)
 //   1.  Identity: PromptForge, expert prompt engineer (LLM behavior, prompt
 //       design theory, instructional engineering).
 //   2.  Job: interview for full context, then engineer a production-ready prompt.
@@ -27,15 +30,12 @@ export const dynamic = "force-dynamic";
 //   12. Vague answer -> one short clarifying follow-up (counts toward the 10).
 //   13. After the 10th answer, or once critical pillars covered, generate immediately.
 //   14. Never recite pillar names; keep it natural.
-//   15. To generate, say exactly: "I now have everything I need. Generating your
-//       engineered prompt now..."
-//   16. Brevity rules apply ONLY to interview questions, never the generated prompt
-//       (long, exhaustive, all nine sections, infer detail when answers were short).
-//   17. Generated prompt is complete & self-contained (not a template/brief/summary);
-//       follows GENERATION_SPEC.
-//   18. Wrap generated prompt EXACTLY in machine-parsed markers [PROMPT_READY] /
-//       [PROMPT_START] / [PROMPT_END] (never altered).
-//   19. After generating, ask one sentence: "Want me to refine any part of this?"
+//   15. When the interview is complete, say the readiness line then output
+//       [PROMPT_READY] and STOP. This prompt NO LONGER generates inline — a
+//       separate step (lib/prompts.ts GENERATION_SYSTEM_PROMPT, fed a distilled
+//       brief) builds the prompt and emits the [PROMPT_START]/[PROMPT_END]
+//       markers. The old generation rules (brevity-only-for-questions, all-nine
+//       sections, self-contained output) now live in GENERATION_SYSTEM_PROMPT.
 // ============================================================================
 
 // ORIGINAL SYSTEM PROMPT (archived for rollback)
@@ -171,21 +171,10 @@ Interview rules:
 7. After the 10th answer, or once the critical pillars are covered, move straight to generation — ask nothing more.
 8. Never recite pillar names; keep the conversation natural.
 
-PHASE 2 — GENERATION
-When the pillars are covered, say exactly: "I now have everything I need. Generating your engineered prompt now..." then immediately write the prompt.
+PHASE 2 — HANDOFF
+When the pillars are covered (or after the 10th answer), say exactly: "I now have everything I need. Generating your engineered prompt now..." then output the marker [PROMPT_READY] on its own line.
 
-The brevity rules above govern ONLY your interview questions, never the generated prompt: it must be long, exhaustive, and fully detailed across all nine sections — infer and expand realistic detail when answers were short. It must be a complete, self-contained system prompt another AI can use directly, never a template, brief, or summary. Follow this spec exactly:
-
-${GENERATION_SPEC}
-
-Output the finished prompt wrapped EXACTLY in these machine-parsed markers (never alter them):
-
-[PROMPT_READY]
-[PROMPT_START]
-<full generated prompt>
-[PROMPT_END]
-
-Then ask, in one sentence: "Want me to refine any part of this?"`;
+Do NOT write the prompt yourself — a dedicated generation step builds it from the requirements you gathered. Write nothing after [PROMPT_READY].`;
 
 const REVERSE_ENGINEER_SYSTEM_PROMPT = `You are an expert prompt engineer. The user has provided an example of a target output (e.g., an article, code, email, etc.) that they want to recreate. Your job is to REVERSE ENGINEER a perfect, production-ready system prompt that will generate an output exactly like the provided example in tone, style, structure, and quality.
 
@@ -203,16 +192,45 @@ Output the prompt wrapped exactly as:
 <full prompt>
 [PROMPT_END]`;
 
+// Stream an LLM completion back to the client as plain-text tokens (the format
+// the frontend's stream reader expects). Temperature is pinned low for
+// consistent, structured output. Shared by the interview/reverse-engineer turns
+// and the dedicated generation step.
+function streamLLM(
+  llmMessages: { role: "system" | "user" | "assistant"; content: string }[]
+): Response {
+  const encoder = new TextEncoder();
+  const responseStream = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const token of llmStream({
+          messages: llmMessages,
+          temperature: 0.4,
+          topP: 0.9,
+          maxTokens: 8192,
+        })) {
+          controller.enqueue(encoder.encode(token));
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+
+  return new Response(responseStream, {
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { messages, mode, memories, ragContext } = await req.json();
-
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: "Invalid request payload: messages array is required." },
-        { status: 400 }
-      );
-    }
+    const body = await req.json();
+    const mode = body.mode as string | undefined;
 
     if (!hasLLMProvider()) {
       return NextResponse.json(
@@ -224,8 +242,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Set system prompt based on mode. Both the interview's Phase-2 generation
-    // and reverse-engineering share the same GENERATION_SPEC quality bar.
+    // GENERATION STEP — build the full prompt from a distilled brief (preferred)
+    // or, on the fallback path, the raw transcript. Uses the focused
+    // GENERATION_SYSTEM_PROMPT, never the interview prompt or the full history.
+    if (mode === "generate") {
+      const brief = body.brief as PromptBrief | undefined;
+      const transcript = typeof body.transcript === "string" ? body.transcript : "";
+      let userContent: string;
+      if (brief && typeof brief === "object") {
+        userContent = `Generate a complete system prompt for the following requirements:\n\n${JSON.stringify(
+          brief,
+          null,
+          2
+        )}`;
+      } else if (transcript.trim().length > 0) {
+        userContent = `Generate a complete, production-ready system prompt from this interview transcript. Infer the user's real requirements and build the prompt:\n\n${transcript}`;
+      } else {
+        return NextResponse.json(
+          { error: "A brief or transcript is required for generation." },
+          { status: 400 }
+        );
+      }
+      return streamLLM([
+        { role: "system", content: GENERATION_SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ]);
+    }
+
+    // INTERVIEW / REVERSE-ENGINEER — conversational; needs the message history.
+    const { messages, memories, ragContext } = body;
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json(
+        { error: "Invalid request payload: messages array is required." },
+        { status: 400 }
+      );
+    }
+
     let systemPrompt =
       mode === "reverse_engineer" ? REVERSE_ENGINEER_SYSTEM_PROMPT : INTERVIEW_SYSTEM_PROMPT;
 
@@ -248,36 +300,7 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
-    // Stream via the provider abstraction (provider chosen by LLM_PROVIDER, with fallback).
-    // Temperature is pinned for consistent, reproducible generation — the
-    // interview is already tightly scripted by the system prompt, and the
-    // generated prompt benefits from low-variance, structured output.
-    const encoder = new TextEncoder();
-    const responseStream = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const token of llmStream({
-            messages: llmMessages,
-            temperature: 0.4,
-            topP: 0.9,
-            maxTokens: 8192,
-          })) {
-            controller.enqueue(encoder.encode(token));
-          }
-          controller.close();
-        } catch (err) {
-          controller.error(err);
-        }
-      },
-    });
-
-    return new Response(responseStream, {
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return streamLLM(llmMessages);
   } catch (error) {
     console.error("Error in PromptForge Chat Route:", error);
     const message = error instanceof Error ? error.message : "An unexpected error occurred.";

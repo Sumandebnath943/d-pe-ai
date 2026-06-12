@@ -1,4 +1,5 @@
 import type { ReviewResult } from './review';
+import type { PromptBrief } from './briefExtract';
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -23,6 +24,9 @@ export interface Session {
   generatedPrompt?: GeneratedPrompt;
   promptVersion?: number;
   tournament?: Tournament;
+  // Structured requirements distilled from the interview, used to drive the
+  // focused generation step (and surfaced read-only in the UI).
+  brief?: PromptBrief;
   // Unified quality + constitutional review (replaces the separate
   // `responsibility` and `quality` passes, which remain as dead types).
   review?: ReviewResult;

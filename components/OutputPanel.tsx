@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Tournament } from '@/lib/types'
 import { REWRITE_THRESHOLD, type ReviewResult } from '@/lib/review'
 import { CONSTITUTION } from '@/lib/constitution'
+import type { PromptBrief } from '@/lib/briefExtract'
 
 interface Props {
   prompt: string | null
@@ -12,6 +13,7 @@ interface Props {
   onRefine: (text: string) => void
   isLoadingChat: boolean
   tournament?: Tournament
+  brief?: PromptBrief
   review?: ReviewResult
   reviewStatus?: 'reviewing' | 'done' | 'error'
   reviewError?: string
@@ -47,7 +49,7 @@ function getTimestamp() {
   return new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
 }
 
-export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, review, reviewStatus, reviewError }: Props) {
+export default function OutputPanel({ prompt, isGenerating, version, onRefine, isLoadingChat, tournament, brief, review, reviewStatus, reviewError }: Props) {
   const hasReview = reviewStatus === 'reviewing' || reviewStatus === 'error' || !!review
   const [copyState, setCopyState] = useState<'idle'|'copied'>('idle')
   const [shareState, setShareState] = useState<'idle'|'copied'>('idle')
@@ -153,7 +155,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
       {isGenerating && <div className="ws-scan" style={{ zIndex: 5 }} />}
 
       {/* Content */}
-      {!prompt && !isGenerating && !tournament && !hasReview ? (
+      {!prompt && !isGenerating && !tournament && !hasReview && !brief ? (
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
@@ -176,6 +178,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
           padding: '28px 24px 16px'
         }}>
           {tournament && <TournamentView tournament={tournament} />}
+          {brief && <BriefPanel brief={brief} />}
           {hasReview && <ReviewView review={review} status={reviewStatus} error={reviewError} />}
           {sections.map((section, i) => (
             <div key={i} style={{ marginBottom: '20px' }}>
@@ -675,5 +678,90 @@ function ReviewView({
         </div>
       )}
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Collapsible "Extracted requirements" panel — read-only view of the brief the
+// distillation step pulled from the interview. Default collapsed; gives the user
+// transparency into what the system understood before generating.
+// ---------------------------------------------------------------------------
+function BriefPanel({ brief }: { brief: PromptBrief }) {
+  const [open, setOpen] = useState(false)
+
+  const rows: { label: string; value: string }[] = [
+    { label: 'Task', value: brief.task },
+    { label: 'Domain', value: brief.domain },
+    { label: 'Persona', value: brief.persona },
+    { label: 'Audience', value: brief.audience },
+    { label: 'Tone', value: brief.tone },
+    { label: 'Constraints', value: brief.constraints.join('; ') },
+    { label: 'Context', value: brief.context },
+    { label: 'Examples', value: brief.examples.join('; ') },
+    { label: 'Output format', value: brief.outputFormat },
+    { label: 'Complexity', value: brief.complexity },
+  ]
+
+  return (
+    <div
+      style={{
+        marginBottom: '22px',
+        border: '1px solid var(--border)',
+        borderRadius: '10px',
+        overflow: 'hidden',
+        background: 'var(--surface)',
+      }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%',
+          padding: '12px 14px',
+          borderBottom: open ? '1px solid var(--border)' : 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '13px' }}>🧾</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-1)' }}>
+            Extracted requirements
+          </span>
+        </span>
+        <span style={{ fontSize: '11px', color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+          {open ? '▾ hide' : '▸ show'}
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '10px 14px 12px' }}>
+          {rows.map((r) => (
+            <div key={r.label} style={{ display: 'flex', gap: '10px', marginTop: '7px' }}>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'var(--text-3)',
+                  minWidth: '92px',
+                  flexShrink: 0,
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                {r.label}
+              </span>
+              <span style={{ fontSize: '12px', color: 'var(--text-1)', lineHeight: 1.5, minWidth: 0, wordBreak: 'break-word' }}>
+                {r.value || '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
