@@ -71,14 +71,15 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        className="ws-grid"
         style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
           paddingTop: '64px',
           paddingBottom: '24px',
-          paddingLeft: '32px',
-          paddingRight: '32px',
+          paddingLeft: '24px',
+          paddingRight: '24px',
           position: 'relative'
         }}
       >
@@ -106,6 +107,7 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
               border: `1px solid ${isReverseEngineer ? 'var(--accent-border)' : 'transparent'}`,
               borderRadius: '20px',
               padding: '4px 10px',
+              fontFamily: 'var(--font-mono)',
               fontSize: '11px',
               fontWeight: 500,
               cursor: 'pointer',
@@ -121,21 +123,31 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
             {isReverseEngineer ? 'Reverse Engineer Mode ON' : 'Reverse Engineer'}
           </button>
         </div>
-        <div style={{
+        <div className="ws-focus-glow" style={{
           maxWidth: '680px',
           margin: '0 auto',
-          background: 'var(--bg)',
+          width: '100%',
+          background: 'var(--surface)',
           border: '1px solid var(--border)',
-          borderRadius: '20px',
+          borderRadius: '12px',
           padding: '12px 16px',
           display: 'flex',
           alignItems: 'flex-end',
           gap: '10px',
-          boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
-          transition: 'border-color 0.2s ease',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.35)',
+          transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
         }}
           onFocus={() => {}}
         >
+          {/* Shell prompt glyph */}
+          <span aria-hidden style={{
+            fontFamily: 'var(--font-terminal)',
+            color: 'var(--accent-soft)',
+            fontSize: '14px',
+            lineHeight: '24px',
+            flexShrink: 0,
+            textShadow: '0 0 10px var(--glow)',
+          }}>❯</span>
           <textarea
             ref={textareaRef}
             value={input}
@@ -166,9 +178,10 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
             style={{
               width: '32px',
               height: '32px',
-              background: canSend ? 'var(--text-1)' : 'var(--border)',
+              background: canSend ? 'var(--accent)' : 'var(--border)',
+              boxShadow: canSend ? '0 0 16px var(--glow)' : 'none',
               border: 'none',
-              borderRadius: '10px',
+              borderRadius: '8px',
               cursor: canSend ? 'pointer' : 'default',
               display: 'flex',
               alignItems: 'center',
@@ -178,8 +191,8 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
             }}
           >
             {isLoading
-              ? <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: 'var(--bg)' }} />
-              : <ArrowUp size={16} strokeWidth={2.5} color={canSend ? 'var(--bg)' : 'var(--text-4)'} />
+              ? <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: '#04260f' }} />
+              : <ArrowUp size={16} strokeWidth={2.5} color={canSend ? '#04260f' : 'var(--text-4)'} />
             }
           </button>
         </div>
@@ -188,7 +201,7 @@ export default function ChatPanel({ messages, isLoading, onSend, onStartOver }: 
           margin: '8px auto 0',
           textAlign: 'center',
         }}>
-          <span style={{ fontSize: '11px', color: 'var(--text-4)' }}>Enter to send · Shift+Enter for new line</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-4)' }}>enter to send · shift+enter for newline</span>
         </div>
       </div>
     </div>

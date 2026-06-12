@@ -55,6 +55,13 @@ export default function PromptForgeApp() {
   const [rightWidth, setRightWidth] = useState(400);
   const [isRightCollapsed, setIsRightCollapsed] = useState(false);
 
+  // Mobile presentation: which pane fills the phone screen (chat or output),
+  // and the sidebar becomes an off-canvas drawer (starts closed on phones).
+  const [mobileView, setMobileView] = useState<'chat' | 'output'>('chat');
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) setIsLeftCollapsed(true);
+  }, []);
+
   // RAG Index State (hybrid: BM25 + vector)
   const ragIndexRef = useRef<HybridIndex | null>(null);
 
@@ -707,8 +714,25 @@ export default function PromptForgeApp() {
       transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
       className="flex flex-row h-screen w-full bg-[var(--bg)] overflow-hidden text-ui text-[var(--text-1)] select-none relative"
     >
+      {/* Mobile layout: the sidebar docks off-canvas and panes go full-width. */}
+      <style>{`
+        @media (max-width: 767px) {
+          .ws-left {
+            position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+            width: 280px !important; min-width: 280px !important; max-width: 85vw !important;
+            transform: translateX(var(--ws-left-x, 0));
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 24px 0 60px rgba(0, 0, 0, 0.55);
+          }
+          .ws-left > div { width: 100% !important; }
+          .ws-right { width: 100% !important; min-width: 100% !important; max-width: 100% !important; padding-top: 56px; background: var(--surface); }
+          .ws-right > div { width: 100% !important; }
+        }
+      `}</style>
+
       {/* LEFT SIDEBAR WRAPPER */}
-      <div 
+      <div
+        className="ws-left"
         style={{
           width: isLeftCollapsed ? 0 : `${leftWidth}px`,
           minWidth: isLeftCollapsed ? 0 : '200px',
@@ -716,9 +740,10 @@ export default function PromptForgeApp() {
           transition: 'width 0.3s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           overflow: 'hidden',
           flexShrink: 0,
+          ['--ws-left-x' as string]: isLeftCollapsed ? '-110%' : '0%',
         }}
       >
-        <div style={{ width: `${leftWidth}px`, height: '100%' }}>
+        <div className="ws-boot-left" style={{ width: `${leftWidth}px`, height: '100%' }}>
           <Sidebar
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -734,9 +759,23 @@ export default function PromptForgeApp() {
         </div>
       </div>
 
+      {/* Mobile scrim behind the open sidebar drawer */}
+      {!isLeftCollapsed && (
+        <div
+          className="md:hidden ws-scrim"
+          onClick={() => setIsLeftCollapsed(true)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 55,
+            background: 'rgba(1, 4, 9, 0.65)',
+            backdropFilter: 'blur(2px)',
+          }}
+        />
+      )}
+
       {/* LEFT DRAG HANDLE */}
       {!isLeftCollapsed && (
-        <div 
+        <div
+          className="hidden md:block"
           onMouseDown={(e) => {
             e.preventDefault();
             const startX = e.pageX;
@@ -769,7 +808,7 @@ export default function PromptForgeApp() {
 
       {/* MAIN CENTER WRAPPER */}
       <>
-          <div className="flex flex-1 flex-col h-full overflow-hidden relative">
+          <div className={`${mobileView === 'output' ? 'hidden md:flex' : 'flex'} ws-boot-up flex-1 flex-col h-full overflow-hidden relative`}>
             {/* Toggle Buttons Floating Layer */}
             <div style={{
               position: 'absolute',
@@ -867,7 +906,7 @@ export default function PromptForgeApp() {
       )}
 
       {/* RIGHT OUTPUT PANEL WRAPPER */}
-      <div className="hidden md:block"
+      <div className={`${mobileView === 'output' ? 'block' : 'hidden'} md:block ws-right`}
         style={{
           width: isRightCollapsed ? 0 : `${rightWidth}px`,
           minWidth: isRightCollapsed ? 0 : '300px',
@@ -877,7 +916,7 @@ export default function PromptForgeApp() {
           flexShrink: 0,
         }}
       >
-        <div style={{ width: `${rightWidth}px`, height: '100%' }}>
+        <div className="ws-boot-right" style={{ width: `${rightWidth}px`, height: '100%' }}>
           <OutputPanel
             prompt={generatedPrompt}
             isGenerating={isGeneratingPrompt}
@@ -891,6 +930,46 @@ export default function PromptForgeApp() {
             </div>
           </div>
         </>
+
+      {/* Mobile pane switcher — the output panel is unreachable on phones otherwise. */}
+      <div
+        className="flex md:hidden"
+        style={{
+          position: 'fixed', top: '12px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, gap: '4px',
+          background: 'rgba(22, 27, 34, 0.92)',
+          border: '1px solid var(--border)',
+          borderRadius: '999px', padding: '4px',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
+        }}
+      >
+        {(['chat', 'output'] as const).map(v => (
+          <button
+            key={v}
+            onClick={() => setMobileView(v)}
+            style={{
+              position: 'relative', padding: '6px 18px', borderRadius: '999px',
+              border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: '11px',
+              textTransform: 'uppercase', letterSpacing: '0.07em',
+              background: mobileView === v ? 'var(--accent-light)' : 'transparent',
+              color: mobileView === v ? 'var(--accent-soft)' : 'var(--text-3)',
+              boxShadow: mobileView === v ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {v}
+            {v === 'output' && generatedPrompt && mobileView !== 'output' && (
+              <span style={{
+                position: 'absolute', top: '5px', right: '8px',
+                width: '5px', height: '5px', borderRadius: '50%',
+                background: 'var(--green)',
+              }} />
+            )}
+          </button>
+        ))}
+      </div>
     </motion.div>
   );
 }

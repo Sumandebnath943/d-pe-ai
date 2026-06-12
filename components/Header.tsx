@@ -113,7 +113,7 @@ export default function Header() {
             boxShadow: '0 0 8px var(--green)'
           }} />
           <span className="label-mono" style={{ color: 'var(--text-3)' }}>
-            LLAMA-3.3-70B
+            D-PE CORE
           </span>
         </div>
       </div>

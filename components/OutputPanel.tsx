@@ -96,13 +96,14 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
       width: '100%',
       flexShrink: 0,
       borderLeft: '1px solid var(--border)',
-      background: 'var(--bg)',
+      background: 'var(--surface)',
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      position: 'relative',
     }}>
-      {/* Header */}
+      {/* Header — editor-tab chrome */}
       <div style={{
         height: '52px',
         borderBottom: '1px solid var(--border)',
@@ -111,31 +112,41 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
         justifyContent: 'space-between',
         padding: '0 20px',
         flexShrink: 0,
+        background: 'var(--bg)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
-          <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-1)' }}>Output</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ display: 'flex', gap: '5px' }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#ff5f56' }} />
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#ffbd2e' }} />
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#27c93f' }} />
+          </span>
+          <span style={{ fontFamily: 'var(--font-terminal)', fontSize: '12.5px', color: 'var(--text-1)' }}>
+            output<span style={{ color: 'var(--text-3)' }}>.md</span>
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {version > 1 && (
             <span style={{
               background: 'var(--surface-2)', color: 'var(--text-2)',
               padding: '2px 8px', borderRadius: '10px',
-              fontSize: '11px', fontWeight: 500
+              fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 500
             }}>v{version}</span>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{
+            <div className={prompt && !isGenerating ? 'ws-live-dot' : undefined} style={{
               width: '5px', height: '5px', borderRadius: '50%',
-              background: isGenerating ? 'var(--accent)' : prompt ? 'var(--green)' : 'var(--text-4)',
+              background: isGenerating ? 'var(--amber)' : prompt ? 'var(--green)' : 'var(--text-4)',
               animation: isGenerating ? 'pulse 1s ease infinite' : 'none'
             }} />
-            <span style={{ fontSize: '12px', color: 'var(--text-3)' }}>
-              {isGenerating ? 'Generating...' : prompt ? 'Ready' : 'Idle'}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {isGenerating ? 'Generating' : prompt ? 'Ready' : 'Idle'}
             </span>
           </div>
         </div>
       </div>
+
+      {/* Scanning sweep while the engine writes */}
+      {isGenerating && <div className="ws-scan" style={{ zIndex: 5 }} />}
 
       {/* Content */}
       {!prompt && !isGenerating && !tournament && !responsibility && !quality ? (
@@ -144,11 +155,12 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
           alignItems: 'center', justifyContent: 'center',
           padding: '40px 32px', gap: '16px'
         }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-4)' }} />
+          <div style={{ fontFamily: 'var(--font-terminal)', fontSize: '13px', color: 'var(--text-4)' }}>
+            // waiting for output<span className="ws-caret" style={{ color: 'var(--text-4)' }}>▮</span>
+          </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', color: 'var(--text-3)', marginBottom: '6px' }}>Waiting for output</div>
             <div style={{ fontSize: '13px', color: 'var(--text-4)', lineHeight: 1.6, maxWidth: '240px', margin: '0 auto' }}>
-              Complete the interview process in the chat to generate your prompt.
+              Complete the interview in the chat and your prompt compiles here.
             </div>
           </div>
         </div>
@@ -166,10 +178,13 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
             <div key={i} style={{ marginBottom: '20px' }}>
               {section.title && (
                 <div style={{
-                  fontSize: '12px', fontWeight: 600, color: 'var(--text-3)',
-                  letterSpacing: '0.02em', marginBottom: '6px',
+                  fontFamily: 'var(--font-terminal)',
+                  fontSize: '12px', fontWeight: 600, color: 'var(--accent-soft)',
+                  letterSpacing: '0.03em', marginBottom: '6px',
                   textTransform: 'uppercase',
-                }}>{section.title}</div>
+                }}>
+                  <span style={{ color: 'var(--text-4)' }}>## </span>{section.title}
+                </div>
               )}
               <div style={{
                 fontSize: '13px', color: 'var(--text-1)', lineHeight: '1.8',
@@ -209,7 +224,8 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
                 color: btn.success ? 'var(--green)' : 'var(--text-3)',
                 background: 'none', border: 'none', borderRadius: '6px',
                 cursor: 'pointer', transition: 'all 0.15s',
-                fontSize: '12px', fontWeight: 500,
+                fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 500,
+                textTransform: 'uppercase', letterSpacing: '0.06em',
               }}
                 onMouseEnter={e => { if (!btn.success) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-1)' } }}
                 onMouseLeave={e => { if (!btn.success) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-3)' } }}
@@ -225,8 +241,8 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
             flexDirection: 'column',
             gap: '8px'
           }}>
-            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: '4px' }}>
-              One-Click Frameworks
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', paddingLeft: '4px' }}>
+              <span style={{ color: 'var(--accent)' }}>$</span> one-click frameworks
             </div>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {[
@@ -273,7 +289,7 @@ export default function OutputPanel({ prompt, isGenerating, version, onRefine, i
               value={refineInput}
               onChange={e => setRefineInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleRefine() }}
-              placeholder="Refine this prompt..."
+              placeholder="❯ refine this prompt…"
               style={{
                 flex: 1,
                 height: '40px',

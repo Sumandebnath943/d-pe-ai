@@ -8,26 +8,28 @@ interface Props {
 export default function MessageBubble({ role, content }: Props) {
   if (role === 'assistant') {
     return (
-      <div style={{
+      <div className="ws-msg-in" style={{
         maxWidth: '720px',
         margin: '0 auto',
         padding: '16px 8px',
         display: 'flex',
         gap: '14px',
         alignItems: 'flex-start',
-        animation: 'fadeIn 0.2s ease',
       }}>
-        {/* Avatar */}
+        {/* Avatar — a terminal prompt block */}
         <div style={{
           width: '26px', height: '26px',
-          background: 'var(--accent)',
-          borderRadius: '50%',
+          background: 'var(--surface)',
+          border: '1px solid var(--accent-border)',
+          borderRadius: '6px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexShrink: 0, marginTop: '2px',
+          color: 'var(--accent-soft)',
+          fontFamily: 'var(--font-terminal)',
+          fontSize: '12px',
+          boxShadow: '0 0 12px var(--glow)',
         }}>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-            <path d="M2 4h12M2 8h8M2 12h12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
+          ❯
         </div>
 
         {/* Content */}
@@ -42,7 +44,7 @@ export default function MessageBubble({ role, content }: Props) {
               {[0, 1, 2].map(i => (
                 <span key={i} style={{
                   width: '5px', height: '5px', borderRadius: '50%',
-                  background: 'var(--text-4)', display: 'inline-block',
+                  background: 'var(--accent)', display: 'inline-block',
                   animation: `blink 1.2s ease infinite`, animationDelay: `${i * 0.2}s`,
                 }} />
               ))}
@@ -53,20 +55,20 @@ export default function MessageBubble({ role, content }: Props) {
     )
   }
 
-  // User message — right aligned, subtle bubble
+  // User message — right aligned terminal card
   return (
-    <div style={{
+    <div className="ws-msg-in" style={{
       display: 'flex',
       justifyContent: 'flex-end',
       maxWidth: '720px',
       margin: '0 auto',
       padding: '16px 8px',
-      animation: 'fadeIn 0.15s ease',
     }}>
       <div style={{
         maxWidth: '70%',
         background: 'var(--surface-2)',
-        borderRadius: '18px',
+        border: '1px solid var(--border)',
+        borderRadius: '12px 12px 4px 12px',
         padding: '10px 16px',
         fontSize: '15px',
         color: 'var(--text-1)',

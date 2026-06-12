@@ -50,13 +50,13 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
       <div style={{
         width: '100%',
         height: '100%',
-        background: 'var(--bg)',
-        borderRight: '1px solid var(--border)',
+        background: 'var(--bg-deep)',
+        borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
       }}>
         <style>{`
-          .sb-item { transition: background 0.15s; border-radius: 6px; }
+          .sb-item { transition: background 0.15s, border-color 0.15s; border-radius: 6px; border-left: 2px solid transparent; }
           .sb-item:hover { background: var(--surface); }
           .sb-del { opacity: 0; transition: opacity 0.15s; }
           .sb-item:hover .sb-del { opacity: 1; }
@@ -72,13 +72,14 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             }}>
               <Logo size={22} />
             </div>
-            <span style={{ 
-              fontFamily: 'var(--font-sans), sans-serif', 
-              fontSize: '18px', 
-              fontWeight: 600, 
+            <span style={{
+              fontFamily: 'var(--font-terminal)',
+              fontSize: '16px',
+              fontWeight: 700,
               color: 'var(--text-1)',
-              letterSpacing: '-0.02em'
-            }}>D-PE.ai</span>
+              letterSpacing: '0.01em'
+            }}>D-PE<span style={{ color: 'var(--accent-soft)' }}>.ai</span></span>
+            <span className="dpe-cursor" style={{ color: 'var(--accent)', fontSize: '11px', marginLeft: '-2px' }}>▮</span>
             </div>
             
             <button
@@ -114,16 +115,18 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
                 style={{
                   flex: 1,
                   padding: '6px 0',
-                  background: mode === m ? 'var(--bg)' : 'transparent',
-                  color: mode === m ? 'var(--text-1)' : 'var(--text-3)',
-                  border: `1px solid ${mode === m ? 'var(--border)' : 'transparent'}`,
+                  background: mode === m ? 'var(--accent-light)' : 'transparent',
+                  color: mode === m ? 'var(--accent-soft)' : 'var(--text-3)',
+                  border: `1px solid ${mode === m ? 'var(--accent-border)' : 'transparent'}`,
                   borderRadius: '6px',
-                  fontSize: '12px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '11px',
                   fontWeight: mode === m ? 600 : 500,
                   cursor: 'pointer',
                   transition: 'all 0.2s ease',
-                  boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
-                  textTransform: 'capitalize',
+                  boxShadow: mode === m ? '0 0 14px var(--glow)' : 'none',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.07em',
                 }}
               >
                 {m}
@@ -143,8 +146,9 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             onMouseEnter={e => e.currentTarget.style.background = 'var(--surface)'}
             onMouseLeave={e => e.currentTarget.style.background = 'none'}
           >
-            <span style={{ fontSize: '16px', lineHeight: 1, color: 'var(--text-3)' }}>+</span>
+            <span style={{ fontSize: '15px', lineHeight: 1, color: 'var(--accent)', fontFamily: 'var(--font-terminal)' }}>+</span>
             New session
+            <span style={{ marginLeft: 'auto', paddingRight: '8px', fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-4)' }}>⌘K</span>
           </button>
           <button onClick={() => setIsMemoryOpen(true)} style={{
             padding: '8px', background: 'none', border: 'none',
@@ -167,10 +171,12 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
               flex: 1, padding: '7px 0', background: activeTab === tab ? 'var(--surface)' : 'none',
               border: 'none', borderRadius: '6px', color: activeTab === tab ? 'var(--text-1)' : 'var(--text-3)',
-              cursor: 'pointer', fontSize: '13px', fontWeight: activeTab === tab ? 500 : 400,
+              cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: '11px',
+              fontWeight: activeTab === tab ? 600 : 400,
+              textTransform: 'uppercase', letterSpacing: '0.08em',
               transition: 'all 0.15s',
             }}>
-              {tab === 'sessions' ? 'Sessions' : 'Datasets'}
+              {tab === 'sessions' ? 'sessions' : 'datasets'}
             </button>
           ))}
         </div>
@@ -185,9 +191,14 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
                   display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '9px 12px',
                   background: isActive ? 'var(--surface)' : 'transparent',
+                  borderLeftColor: isActive ? 'var(--accent)' : 'transparent',
                   color: isActive ? 'var(--text-1)' : 'var(--text-2)',
                   fontSize: '13px', cursor: 'pointer',
                 }}>
+                  <span aria-hidden style={{
+                    fontFamily: 'var(--font-terminal)', fontSize: '10px', flexShrink: 0,
+                    color: isActive ? 'var(--accent-soft)' : 'var(--text-4)',
+                  }}>{isActive ? '❯' : '·'}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {s.title?.slice(0, 30) || 'Untitled'}
                   </span>
@@ -213,12 +224,12 @@ export default function Sidebar({ sessions, activeSessionId, onSelectSession, on
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ width: '6px', height: '6px', background: 'var(--green)', borderRadius: '50%', display: 'inline-block' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-3)' }}>Llama-3.3-70B</span>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-subtle)', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <span className="ws-live-dot" style={{ width: '6px', height: '6px', background: 'var(--green)', borderRadius: '50%', display: 'inline-block', flexShrink: 0 }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>D-PE Core</span>
           </div>
-          <span style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 500 }}>Beta</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--accent-soft)', background: 'var(--accent-light)', border: '1px solid var(--accent-border)', padding: '1px 7px', borderRadius: '9px', letterSpacing: '0.06em' }}>BETA</span>
         </div>
       </div>
     </>

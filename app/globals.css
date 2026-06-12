@@ -1,43 +1,60 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   D-PE.ai design system — "the workstation".
+   One continuous dark terminal world: the landing console, the glitch
+   hand-off, and the workspace all share this GitHub-dark + phosphor-green
+   palette. The light theme is retired; the terminal is the brand.
+--------------------------------------------------------------------------- */
+
 :root {
-  --bg: #FFFFFF;
-  --surface: #F9F9F9;
-  --surface-2: #F5F5F4;
-  --border: #EBEBEB;
-  --border-subtle: #F2F2F2;
-  --text-1: #1A1A1A;
-  --text-2: #666666;
-  --text-3: #999999;
-  --text-4: #CCCCCC;
-  --accent: #C4703F;
-  --accent-light: rgba(196, 112, 63, 0.06);
-  --accent-border: rgba(196, 112, 63, 0.2);
-  --green: #6B8F71;
-  --green-light: rgba(107, 143, 113, 0.1);
+  --bg: #0d1117;
+  --bg-deep: #010409;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --border: #30363d;
+  --border-subtle: #21262d;
+  --border-strong: #3d444d;
+  --text-1: #e6edf3;
+  --text-2: #b1bac4;
+  --text-3: #8b949e;
+  --text-4: #545d68;
+  --accent: #3fb950;
+  --accent-soft: #7ee787;
+  --accent-light: rgba(63, 185, 80, 0.09);
+  --accent-border: rgba(63, 185, 80, 0.35);
+  --glow: rgba(63, 185, 80, 0.16);
+  --green: #3fb950;
+  --green-light: rgba(63, 185, 80, 0.13);
+  --amber: #d8a657;
+  --blue: #58a6ff;
+  --purple: #bc8cff;
+  --red: #f85149;
   --font-serif: var(--font-instrument-serif);
   --font-sans: var(--font-manrope);
   --font-mono: var(--font-dm-mono);
   --font-terminal: var(--font-jetbrains-mono);
 }
 
+/* Legacy hook — some markup still toggles this class; keep it equal to root
+   so nothing breaks. */
 .dark-theme {
-  --bg: #1A1A1A;
-  --surface: #222222;
-  --surface-2: #2A2A2A;
-  --border: #333333;
-  --border-subtle: #2C2C2C;
-  --text-1: #ECECEC;
-  --text-2: #999999;
-  --text-3: #666666;
-  --text-4: #444444;
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --border: #30363d;
+  --border-subtle: #21262d;
+  --text-1: #e6edf3;
+  --text-2: #b1bac4;
+  --text-3: #8b949e;
+  --text-4: #545d68;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
 
 body {
-  background: var(--bg);
+  background: var(--bg-deep);
   color: var(--text-1);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
@@ -46,12 +63,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-::selection { background: var(--accent); color: #fff; }
+::selection { background: rgba(63, 185, 80, 0.32); color: var(--text-1); }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-4); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
 .label-sm {
   font-family: var(--font-sans);
@@ -100,5 +117,94 @@ body {
   80% { transform: translate(1px, 1px); }
 }
 .dpe-glitch { animation: glitchShift 0.16s steps(2) infinite; }
+
+/* Logo arrow sparks twinkle in sequence (delays set per-spark inline). */
+@keyframes sparkBlink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.28; transform: scale(0.8); }
+}
+.logo-spark {
+  animation: sparkBlink 1.8s ease-in-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* --- Cinematic staging (landing) --- */
+/* Faint CRT scanlines over the glass terminal — texture, not nostalgia. */
+.crt-scan {
+  position: absolute; inset: 0; pointer-events: none; z-index: 5;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.022) 0px,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Phosphor flicker — barely perceptible life in the glass. */
+@keyframes phosphorFlicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.97; }
+  94% { opacity: 1; }
+  97% { opacity: 0.985; }
+}
+.dpe-flicker { animation: phosphorFlicker 7s linear infinite; }
+
+/* --- Workspace (the dark studio) --- */
+/* Message entrances: terminal lines materialize, they don't just appear. */
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ws-msg-in { animation: msgIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Panel choreography when the workspace boots after the glitch. */
+@keyframes panelLeft  { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes panelRight { from { opacity: 0; transform: translateX(24px); }  to { opacity: 1; transform: translateX(0); } }
+@keyframes panelUp    { from { opacity: 0; transform: translateY(18px); }  to { opacity: 1; transform: translateY(0); } }
+.ws-boot-left  { animation: panelLeft  0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.10s both; }
+.ws-boot-right { animation: panelRight 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.22s both; }
+.ws-boot-up    { animation: panelUp    0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both; }
+
+/* Scanning sweep across the output panel while a prompt is generating. */
+@keyframes scanSweep {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(2000%); }
+}
+.ws-scan {
+  position: absolute; left: 0; right: 0; top: 0; height: 56px;
+  background: linear-gradient(to bottom, transparent, var(--glow), transparent);
+  animation: scanSweep 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Ambient dot-grid behind the chat — the room has walls. */
+.ws-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Green glow ring for focused terminal inputs. */
+.ws-focus-glow:focus-within {
+  border-color: var(--accent-border) !important;
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 24px var(--glow) !important;
+}
+
+/* Status dot that breathes like the landing's nodes. */
+@keyframes statusBreathe {
+  0%, 100% { box-shadow: 0 0 3px rgba(63, 185, 80, 0.4); }
+  50%      { box-shadow: 0 0 9px rgba(63, 185, 80, 0.9); }
+}
+.ws-live-dot { animation: statusBreathe 2.4s ease-in-out infinite; }
+
+/* Caret block for the workspace empty state. */
+.ws-caret { animation: cursorBlink 1.05s step-end infinite; }
+
+/* Mobile drawer scrim. */
+@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+.ws-scrim { animation: scrimIn 0.25s ease both; }
 
 button { font-family: inherit; }

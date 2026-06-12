@@ -1,6 +1,9 @@
 "use client"
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import gsap from 'gsap'
+import CodeRain3D, { CodeRainHandle } from './landing/CodeRain3D'
+import Logo from './Logo'
 
 interface Props {
   onUnlock: () => void
@@ -92,6 +95,57 @@ export default function TerminalLanding({ onUnlock }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const timersRef = useRef<number[]>([])
+  const rainRef = useRef<CodeRainHandle>(null)
+  const brandRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  // Cinematic staging: GSAP owns the brand/terminal entrance, an idle float,
+  // and a subtle mouse tilt on the glass terminal. Purely presentational.
+  useEffect(() => {
+    const finePointer = window.matchMedia('(pointer: fine)').matches
+    const card = cardRef.current
+    const brand = brandRef.current
+    if (!card || !brand) return
+
+    const ctx = gsap.context(() => {
+      gsap.set(card, { transformPerspective: 1200 })
+      gsap.fromTo(
+        Array.from(brand.children),
+        { opacity: 0, x: -18 },
+        { opacity: 1, x: 0, duration: 0.8, stagger: 0.09, ease: 'power3.out', delay: 0.15 }
+      )
+      gsap.fromTo(
+        card,
+        { opacity: 0, y: 46, rotationX: 9, scale: 0.96 },
+        {
+          opacity: 1, y: 0, rotationX: 0, scale: 1, duration: 1.15, ease: 'power3.out', delay: 0.25,
+          onComplete: () => {
+            // Idle float — the console hovers like a hologram.
+            gsap.to(card, { y: '+=7', duration: 3.4, yoyo: true, repeat: -1, ease: 'sine.inOut' })
+          },
+        }
+      )
+    })
+
+    let onTilt: ((e: MouseEvent) => void) | null = null
+    if (finePointer) {
+      const tiltX = gsap.quickTo(card, 'rotationX', { duration: 0.8, ease: 'power3.out' })
+      const tiltY = gsap.quickTo(card, 'rotationY', { duration: 0.8, ease: 'power3.out' })
+      onTilt = (e: MouseEvent) => {
+        if (window.innerWidth < 880) return
+        const nx = (e.clientX / window.innerWidth) * 2 - 1
+        const ny = (e.clientY / window.innerHeight) * 2 - 1
+        tiltY(nx * 3.2)
+        tiltX(-ny * 2.4)
+      }
+      window.addEventListener('mousemove', onTilt, { passive: true })
+    }
+
+    return () => {
+      if (onTilt) window.removeEventListener('mousemove', onTilt)
+      ctx.revert()
+    }
+  }, [])
 
   // Track viewport width to switch between the two-column and stacked layouts.
   useEffect(() => {
@@ -147,6 +201,11 @@ export default function TerminalLanding({ onUnlock }: Props) {
 
   const runUnlock = () => {
     setIsCheckingOut(true)
+    // The rain goes into overdrive and the console powers up as we jack in.
+    rainRef.current?.surge()
+    if (cardRef.current) {
+      gsap.to(cardRef.current, { scale: 1.012, duration: 0.9, ease: 'power2.in' })
+    }
     // A fresh commit lands at the top of the log right before we jack in.
     setCommits(prev => [
       { hash: 'a1b2c3d', head: true, isNew: true, type: 'feat', scope: 'welcome', msg: "you're in. let's build something good." },
@@ -220,14 +279,15 @@ export default function TerminalLanding({ onUnlock }: Props) {
   return (
     <div style={{
       width: '100vw', height: '100vh', background: '#010409',
-      backgroundImage: 'radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)',
-      backgroundSize: '22px 22px',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 'clamp(16px, 3vw, 40px)', fontFamily: fontStack, overflow: 'hidden',
+      position: 'relative',
     }}>
+      {/* 3D code rain — the digital weather behind the glass console. */}
+      <CodeRain3D ref={rainRef} />
       <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse at center, transparent 38%, rgba(1,4,9,0.9) 100%)',
+        position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1,
+        background: 'radial-gradient(ellipse at center, transparent 42%, rgba(1,4,9,0.78) 100%)',
       }} />
 
       {/* Two-column shell: brand on the left, terminal on the right. */}
@@ -240,11 +300,9 @@ export default function TerminalLanding({ onUnlock }: Props) {
         justifyContent: 'center',
         gap: isNarrow ? 'clamp(18px, 4vw, 28px)' : 'clamp(36px, 5vw, 76px)',
       }}>
-        {/* LEFT — the brand anchor (never scrolls) */}
-        <motion.div
-          initial={{ opacity: 0, x: -14 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.55, ease: 'easeOut' }}
+        {/* LEFT — the brand anchor (never scrolls); GSAP staggers its children in. */}
+        <div
+          ref={brandRef}
           style={{
             flexShrink: 0,
             width: isNarrow ? '100%' : 'clamp(280px, 30vw, 380px)',
@@ -254,15 +312,21 @@ export default function TerminalLanding({ onUnlock }: Props) {
           }}
         >
           <div style={{
-            display: 'flex', alignItems: 'baseline', gap: 1,
-            fontWeight: 800, fontSize: isNarrow ? 'clamp(34px, 11vw, 52px)' : 'clamp(44px, 5vw, 76px)',
-            letterSpacing: '0.02em', lineHeight: 1,
+            display: 'flex', alignItems: 'center',
+            gap: isNarrow ? 12 : 'clamp(14px, 1.6vw, 22px)',
           }}>
-            <span style={{ color: C.bright }}>D</span>
-            <span style={{ color: C.greenSoft, textShadow: '0 0 22px rgba(126,231,135,0.5)' }}>·</span>
-            <span style={{ color: C.bright }}>PE</span>
-            <span style={{ color: C.muted, fontWeight: 600 }}>.ai</span>
-            <span className="dpe-cursor" style={{ color: C.greenSoft, fontWeight: 400, marginLeft: 6 }}>▮</span>
+            {/* The nine-pillar arrow mark — its sparks carry the blink now. */}
+            <span style={{ color: C.bright, filter: 'drop-shadow(0 0 14px rgba(63,185,80,0.45))', flexShrink: 0 }}>
+              <Logo size={isNarrow ? 'clamp(34px, 10vw, 48px)' : 'clamp(44px, 4.6vw, 68px)'} twinkle />
+            </span>
+            <div style={{
+              display: 'flex', alignItems: 'baseline', gap: 1,
+              fontWeight: 800, fontSize: isNarrow ? 'clamp(30px, 9.5vw, 46px)' : 'clamp(38px, 4.4vw, 64px)',
+              letterSpacing: '0.02em', lineHeight: 1,
+            }}>
+              <span style={{ color: C.bright }}>D-PE</span>
+              <span style={{ color: C.greenSoft, fontWeight: 600, textShadow: '0 0 22px rgba(126,231,135,0.4)' }}>.ai</span>
+            </div>
           </div>
           <div style={{
             marginTop: 14, color: C.muted, fontSize: 'clamp(10px, 1.3vw, 12px)',
@@ -283,26 +347,27 @@ export default function TerminalLanding({ onUnlock }: Props) {
               </div>
             </>
           )}
-        </motion.div>
+        </div>
 
-        {/* RIGHT — the terminal */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: 'easeOut', delay: 0.1 }}
+        {/* RIGHT — the glass terminal; GSAP raises, floats, and tilts it. */}
+        <div
+          ref={cardRef}
           style={{
             position: 'relative',
             width: isNarrow ? '100%' : 'auto',
             flex: isNarrow ? 'none' : 1,
             maxWidth: isNarrow ? '100%' : '620px',
             height: isNarrow ? 'min(60vh, 520px)' : 'min(82vh, 700px)',
-            background: 'rgba(13, 17, 23, 0.94)',
-            border: `1px solid ${C.border}`, borderRadius: 'clamp(8px, 1.4vw, 12px)',
-            boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+            background: 'rgba(10, 14, 19, 0.78)',
+            border: '1px solid rgba(63,185,80,0.18)', borderRadius: 'clamp(8px, 1.4vw, 12px)',
+            boxShadow: '0 30px 90px rgba(0,0,0,0.75), 0 0 70px rgba(63,185,80,0.07), inset 0 1px 0 rgba(255,255,255,0.06)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            backdropFilter: 'blur(6px)',
+            backdropFilter: 'blur(14px) saturate(1.25)',
+            willChange: 'transform',
           }}
         >
+        {/* Faint scanlines over the glass. */}
+        <div className="crt-scan" />
         {/* Window chrome */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -322,7 +387,7 @@ export default function TerminalLanding({ onUnlock }: Props) {
 
         {/* Scrollback (scrollbar hidden via .dpe-scroll) */}
         <div
-          className="dpe-scroll"
+          className="dpe-scroll dpe-flicker"
           onClick={() => !isCheckingOut && inputRef.current?.focus()}
           style={{
             flex: 1, overflowY: 'auto', overflowX: 'hidden',
@@ -395,7 +460,7 @@ export default function TerminalLanding({ onUnlock }: Props) {
               borderRadius: 4, fontWeight: 700, letterSpacing: '0.1em', flexShrink: 0,
             }}>{status}</span>
             <span style={{ flexShrink: 0 }}>⎇ main</span>
-            {!isNarrow && <span style={{ color: C.faint }}>llama-3.3-70b</span>}
+            {!isNarrow && <span style={{ color: C.faint }}>dpe-core</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
             {!isNarrow && <span style={{ color: C.faint }}>9 pillars</span>}
@@ -403,7 +468,7 @@ export default function TerminalLanding({ onUnlock }: Props) {
             <span>{clock}</span>
           </div>
         </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   )
