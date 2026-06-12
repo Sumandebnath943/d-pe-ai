@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Tournament } from '@/lib/types'
-import type { ReviewResult } from '@/lib/review'
+import { REWRITE_THRESHOLD, type ReviewResult } from '@/lib/review'
+import { CONSTITUTION } from '@/lib/constitution'
 
 interface Props {
   prompt: string | null
@@ -538,73 +539,94 @@ function ReviewView({
       <div style={cardShell}>
         {cardHeader('🔬', 'Quality Review')}
         <div style={{ padding: '12px 14px' }}>
-          {/* Big colour-coded score */}
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '8px' }}>
+          {/* Big colour-coded score + a ✓ when it cleared the threshold */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '6px' }}>
             <span style={{ fontSize: '30px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: scoreColor, lineHeight: 1 }}>
               {qualityScore}
             </span>
             <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>/ 100 quality</span>
+            {rewriteSkipped && (
+              <span style={{ marginLeft: '2px', fontSize: '15px', fontWeight: 700, color: 'var(--green)' }}>✓</span>
+            )}
           </div>
 
-          {/* Quality issues as bullets */}
-          {qualityIssues.map((iss, i) => (
-            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px' }}>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#d8a657', marginTop: '5px' }} />
-              <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 0 }}>{iss}</div>
-            </div>
-          ))}
+          {/* Threshold status line — why a rewrite did or didn't fire */}
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              lineHeight: 1.5,
+              marginBottom: '10px',
+              color: rewriteSkipped ? 'var(--green)' : '#d8a657',
+            }}
+          >
+            {rewriteSkipped
+              ? `Passed threshold (≥ ${REWRITE_THRESHOLD}) — no rewrite needed`
+              : qualityScore < REWRITE_THRESHOLD
+                ? `Below threshold (< ${REWRITE_THRESHOLD}) — rewrite generated`
+                : `Above threshold, but a rule violation triggered a rewrite`}
+          </div>
 
-          {/* Rewrite indicator — three states: cleared, rewritten, or not produced */}
-          {rewriteSkipped ? (
-            <div
-              style={{
-                marginTop: qualityIssues.length ? '12px' : '4px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '11px',
-                color: 'var(--green)',
-                background: 'var(--green-light)',
-                border: '1px solid var(--green)',
-                borderRadius: '6px',
-                padding: '7px 10px',
-                lineHeight: 1.5,
-              }}
-            >
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
-              No rewrite needed — score cleared the threshold.
-            </div>
-          ) : !rewrite ? (
-            <div
-              style={{
-                marginTop: qualityIssues.length ? '12px' : '4px',
-                fontSize: '11px',
-                color: 'var(--text-3)',
-                background: 'var(--surface-2)',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                padding: '7px 10px',
-                lineHeight: 1.5,
-              }}
-            >
-              No rewrite was produced — see the issues and rule violations.
-            </div>
-          ) : (
-            <div
-              style={{
-                marginTop: qualityIssues.length ? '12px' : '4px',
-                fontSize: '11px',
-                color: 'var(--accent)',
-                background: 'var(--accent-light)',
-                border: '1px solid var(--accent-border)',
-                borderRadius: '6px',
-                padding: '7px 10px',
-                lineHeight: 1.5,
-              }}
-            >
-              Rewrite generated — the version shown below is the improved one.
-            </div>
+          {/* Issues / notes list */}
+          {qualityIssues.length > 0 && (
+            <>
+              <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', marginBottom: '2px' }}>
+                {rewriteSkipped ? 'Minor notes' : 'Issues found'}
+              </div>
+              {qualityIssues.map((iss, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '6px' }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#d8a657', marginTop: '5px' }} />
+                  <div style={{ fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 0 }}>{iss}</div>
+                </div>
+              ))}
+            </>
           )}
+
+          {/* Rewrite box — only when a rewrite was generated (never when skipped) */}
+          {!rewriteSkipped &&
+            (rewrite ? (
+              <div style={{ marginTop: qualityIssues.length ? '14px' : '4px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent)', marginBottom: '5px' }}>
+                  Rewrite generated
+                </div>
+                <div
+                  style={{
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '11px',
+                    color: 'var(--text-2)',
+                    background: 'var(--bg)',
+                    border: '1px solid var(--accent-border)',
+                    borderRadius: '6px',
+                    padding: '10px',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {rewrite}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-4)', marginTop: '4px' }}>
+                  This rewrite is the version now shown in the prompt below.
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: qualityIssues.length ? '12px' : '4px',
+                  fontSize: '11px',
+                  color: 'var(--text-3)',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  padding: '7px 10px',
+                  lineHeight: 1.5,
+                }}
+              >
+                No rewrite was produced — see the issues and rule violations.
+              </div>
+            ))}
         </div>
       </div>
 
@@ -613,17 +635,25 @@ function ReviewView({
         {cardHeader('🛡️', 'Responsibility Review')}
         <div style={{ padding: '12px 14px' }}>
           {constitutionViolations.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--green)' }}>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
-              All rules passed.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--green)' }}>
+              <span style={{ fontSize: '13px' }}>✓</span>
+              All {CONSTITUTION.length} constitutional rules passed
             </div>
           ) : (
-            constitutionViolations.map((rule, i) => (
-              <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: i === 0 ? 0 : '8px' }}>
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#cc5555', marginTop: '5px' }} />
-                <div style={{ fontSize: '12px', color: '#cc5555', lineHeight: 1.5, minWidth: 0, fontWeight: 600 }}>{rule}</div>
+            <>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#cc5555', marginBottom: '8px' }}>
+                {constitutionViolations.length} rule{constitutionViolations.length === 1 ? '' : 's'} violated
               </div>
-            ))
+              {constitutionViolations.map((rule, i) => (
+                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: i === 0 ? 0 : '8px' }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0, background: '#cc5555', marginTop: '5px' }} />
+                  <div style={{ fontSize: '12px', color: '#cc5555', lineHeight: 1.5, minWidth: 0, fontWeight: 600 }}>{rule}</div>
+                </div>
+              ))}
+              <div style={{ marginTop: '10px', fontSize: '11px', color: 'var(--text-3)', lineHeight: 1.5 }}>
+                A rewrite was generated to address these violations, regardless of the quality score.
+              </div>
+            </>
           )}
         </div>
       </div>
