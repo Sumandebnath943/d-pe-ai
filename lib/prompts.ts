@@ -30,7 +30,7 @@ Rules:
 - Use the brief's EXACT specifics (its persona, tone, audience, constraints, examples). Do not flatten them into vague words like "professional", "helpful", or "appropriate".
 - PERSONA is a named, vivid expert in second person. INSTRUCTIONS is a numbered list of 8–12 explicit do/don't directives that cover edge cases and out-of-scope requests. EXAMPLES contains at least one worked input→ideal-output pair (label invented ones as illustrative).
 - Depth scales with the brief's "complexity": basic = solid and complete; standard = thorough; complex = exhaustive with edge cases and multi-step reasoning. The section COUNT is always nine regardless.
-- Aim for 700–1500+ words. Favor depth and specificity over brevity. No placeholders like "[insert X]".
+- LENGTH IS A HARD REQUIREMENT: the finished prompt must be at least 800 words — treat this as a floor, not a target. Each of the nine sections must be a substantial multi-sentence paragraph of concrete, specific content — never placeholders or one-liners. The Instructions section especially must have 8–12 numbered directives, each a concrete specific rule, not vague guidance. Before emitting, gauge the length; if your draft is under 800 words, expand the thinnest sections with more concrete detail until it clears the floor. Favor depth and specificity over brevity; no placeholders like "[insert X]".
 
 Output ONLY the finished prompt, wrapped EXACTLY in these machine-parsed markers, with nothing before or after them:
 
