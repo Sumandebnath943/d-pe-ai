@@ -68,6 +68,9 @@ const FALLBACK_JOKES = [
 
 const UNLOCK_CMDS = ['init d-pe', 'sudo d-pe', 'git checkout d-pe', 'init']
 
+// Hidden: typing any of these makes the code rain coalesce into a word.
+const MATRIX_CMDS = ['matrix', 'the matrix', 'follow the white rabbit', 'red pill', 'neo', 'wake up']
+
 // The commit log doubles as the feature changelog — each line is a real USP,
 // stated plainly with a light wink so a first-timer instantly gets the value.
 type Commit = { hash: string; type: string; scope: string; msg: string; head?: boolean; isNew?: boolean }
@@ -91,6 +94,9 @@ export default function TerminalLanding({ onUnlock }: Props) {
   const [clock, setClock] = useState('')
   // Default to desktop for SSR; the effect corrects it after mount (no hydration mismatch).
   const [vw, setVw] = useState(1200)
+  // Easter eggs: gold "god-tier" flash (Konami) and the self-typing ghost prompt.
+  const [godMode, setGodMode] = useState(false)
+  const [ghostText, setGhostText] = useState<string | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -98,6 +104,7 @@ export default function TerminalLanding({ onUnlock }: Props) {
   const rainRef = useRef<CodeRainHandle>(null)
   const brandRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const konamiAddedRef = useRef(false)
 
   // Cinematic staging: GSAP owns the brand/terminal entrance, an idle float,
   // and a subtle mouse tilt on the glass terminal. Purely presentational.
@@ -163,6 +170,90 @@ export default function TerminalLanding({ onUnlock }: Props) {
     return () => clearInterval(id)
   }, [])
 
+  // Easter egg 1 — the Konami code flips the world god-tier: the rain flashes
+  // gold, the status chip reads GOD-TIER, and a trophy commit lands in the log.
+  useEffect(() => {
+    const seq = ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a']
+    let pos = 0
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      pos = k === seq[pos] ? pos + 1 : k === seq[0] ? 1 : 0
+      if (pos < seq.length) return
+      pos = 0
+      rainRef.current?.godmode()
+      setGodMode(true)
+      window.setTimeout(() => setGodMode(false), 3600)
+      if (konamiAddedRef.current) return
+      konamiAddedRef.current = true
+      setCommits(prev => [
+        { hash: 'g0dt1er', head: true, isNew: true, type: 'feat', scope: 'konami', msg: 'god-tier mode unlocked — +30 better prompts' },
+        ...prev.map(c => ({ ...c, head: false })),
+      ])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Easter egg 2 — the ghost in the machine. After a stretch of no typing, the
+  // terminal types `init d-pe` to itself, thinks better of it, deletes it, and
+  // leaves a nudge. Any keypress or click cancels it and resets the wait.
+  useEffect(() => {
+    if (!bootComplete || isCheckingOut) return
+    const TAUNTS = [
+      "> the prompt won't write itself. (i can wait.)",
+      '> still here. somewhere a mediocre prompt is being written without you.',
+      "> fine. i'll stop typing for you. type init d-pe.",
+    ]
+    let timers: number[] = []
+    let idle = 0
+    let ghosting = false
+    let count = 0
+
+    function stopGhost() {
+      timers.forEach(clearTimeout); timers = []
+      if (ghosting) { ghosting = false; setGhostText(null) }
+    }
+    function schedule() {
+      window.clearTimeout(idle)
+      idle = window.setTimeout(runGhost, 25000)
+    }
+    function runGhost() {
+      if (ghosting || count >= TAUNTS.length) return
+      if ((inputRef.current?.value ?? '') !== '') { schedule(); return }
+      ghosting = true
+      const phrase = 'init d-pe'
+      let t = 0
+      for (let i = 1; i <= phrase.length; i++) {
+        t += 95 + Math.random() * 70
+        const v = phrase.slice(0, i)
+        timers.push(window.setTimeout(() => setGhostText(v), t))
+      }
+      t += 950 // hesitate, cursor blinking on the full command
+      for (let i = phrase.length - 1; i >= 0; i--) {
+        t += 48
+        const v = phrase.slice(0, i)
+        timers.push(window.setTimeout(() => setGhostText(v), t))
+      }
+      t += 340
+      const line = TAUNTS[count++]
+      timers.push(window.setTimeout(() => {
+        setGhostText(null); ghosting = false
+        setLines(prev => [...prev, { text: line, color: C.faint, delay: 0 }])
+        schedule()
+      }, t))
+    }
+    function onActivity() { stopGhost(); schedule() }
+
+    window.addEventListener('keydown', onActivity)
+    window.addEventListener('pointerdown', onActivity)
+    schedule()
+    return () => {
+      window.clearTimeout(idle); timers.forEach(clearTimeout)
+      window.removeEventListener('keydown', onActivity)
+      window.removeEventListener('pointerdown', onActivity)
+    }
+  }, [bootComplete, isCheckingOut])
+
   // Stream the boot scrollback line-by-line; timers are tracked for cleanup + skip.
   useEffect(() => {
     BOOT_LINES.forEach((ln, i) => {
@@ -223,6 +314,22 @@ export default function TerminalLanding({ onUnlock }: Props) {
     timersRef.current.push(done)
   }
 
+  // Easter egg 3 — `matrix` collapses the rain into glowing letters while
+  // Morpheus narrates, timed so the lines land as the word resolves.
+  const runMatrix = () => {
+    rainRef.current?.reveal()
+    const seq: Line[] = [
+      { text: '> Wake up, Neo…', color: C.greenSoft, delay: 200 },
+      { text: '> The Matrix has you.', color: C.green, delay: 1200 },
+      { text: '> Follow the white rabbit. 🐇', color: C.muted, delay: 2100 },
+      { text: '> No one can tell you what a good prompt is — you have to write it yourself.', color: C.greenSoft, delay: 3500 },
+    ]
+    seq.forEach(l => {
+      const id = window.setTimeout(() => pushLines([{ text: l.text, color: l.color, delay: 0 }]), l.delay)
+      timersRef.current.push(id)
+    })
+  }
+
   const handleCommand = (e: React.FormEvent) => {
     e.preventDefault()
     if (isCheckingOut) return
@@ -237,6 +344,10 @@ export default function TerminalLanding({ onUnlock }: Props) {
 
     if (UNLOCK_CMDS.includes(cmd)) {
       runUnlock()
+      return
+    }
+    if (MATRIX_CMDS.includes(cmd)) {
+      runMatrix()
       return
     }
     const direct = JOKE_COMMANDS[cmd] ?? JOKE_COMMANDS[cmd.split(' ')[0]]
@@ -271,8 +382,8 @@ export default function TerminalLanding({ onUnlock }: Props) {
     }
   }
 
-  const status = isCheckingOut ? 'CHECKOUT' : bootComplete ? 'READY' : 'BOOTING'
-  const statusColor = isCheckingOut ? C.amber : bootComplete ? C.green : C.blue
+  const status = isCheckingOut ? 'CHECKOUT' : godMode ? 'GOD-TIER' : bootComplete ? 'READY' : 'BOOTING'
+  const statusColor = isCheckingOut ? C.amber : godMode ? '#ffd166' : bootComplete ? C.green : C.blue
   const fontStack = "var(--font-terminal), 'JetBrains Mono', ui-monospace, 'SF Mono', 'Courier New', monospace"
   const isNarrow = vw < 880
 
@@ -414,12 +525,13 @@ export default function TerminalLanding({ onUnlock }: Props) {
                 <span style={{ color: C.greenSoft, flexShrink: 0 }}>you@d-pe:~$</span>
                 <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                   <span aria-hidden style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: C.text }}>
-                    {inputValue}
+                    {ghostText ?? inputValue}
                     <span className="dpe-cursor" style={{ color: C.greenSoft }}>▮</span>
                   </span>
                   <input
                     ref={inputRef} type="text" value={inputValue}
                     onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown}
+                    readOnly={ghostText !== null}
                     autoFocus spellCheck={false} autoComplete="off" aria-label="terminal command input"
                     style={{
                       position: 'absolute', inset: 0, width: '100%',
@@ -430,7 +542,7 @@ export default function TerminalLanding({ onUnlock }: Props) {
                   />
                 </div>
               </form>
-              {inputValue.length === 0 && (
+              {inputValue.length === 0 && ghostText === null && (
                 <div className="dpe-hint" style={{ marginTop: 16, fontSize: 'clamp(11px, 1.3vw, 12.5px)', color: C.muted }}>
                   ‹ type <span style={{ color: C.greenSoft, fontWeight: 600 }}>init d-pe</span> to enter →
                 </div>
