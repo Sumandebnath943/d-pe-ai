@@ -717,7 +717,6 @@ function BriefPanel({ brief }: { brief: PromptBrief }) {
         style={{
           width: '100%',
           padding: '12px 14px',
-          borderBottom: open ? '1px solid var(--border)' : 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -740,7 +739,7 @@ function BriefPanel({ brief }: { brief: PromptBrief }) {
       </button>
 
       {open && (
-        <div style={{ padding: '10px 14px 12px' }}>
+        <div style={{ padding: '10px 14px 12px', borderTop: '1px solid var(--border)' }}>
           {rows.map((r) => (
             <div key={r.label} style={{ display: 'flex', gap: '10px', marginTop: '7px' }}>
               <span
